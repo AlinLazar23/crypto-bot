@@ -32,8 +32,9 @@ from telegram.ext import (
 )
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
-BOT_TOKEN   = "8592401957:AAECZt1ZakLomCwztRprQ0Vmz9O3vcIrVtw"    # ← Token de la @BotFather
-CMC_API_KEY = "2d2b671d35d140a38b265193bf052464"  # ← API key de la coinmarketcap.com/api
+import os
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8592401957:AAECZt1ZakLomCwztRprQ0Vmz9O3vcIrVtw")
+CMC_API_KEY = os.environ.get("CMC_API_KEY", "2d2b671d35d140a38b265193bf052464")
 CMC_BASE    = "https://pro-api.coinmarketcap.com/v1"
 CHECK_ALERTS_INTERVAL = 60             # secunde între verificări alerte
 
@@ -118,18 +119,14 @@ def get_top_coins(limit: int = 10) -> list[dict]:
         logger.error(f"get_top_coins error: {e}")
     return []
 
-def get_trending_coins(limit: int = 7) -> list[dict]:
+COINGECKO_BASE = "https://api.coingecko.com/api/v3"
+
+def get_trending_coins() -> list[dict]:
+    """Trending de pe CoinGecko — fără API key necesar."""
     try:
-        r = requests.get(
-            f"{CMC_BASE}/cryptocurrency/listings/latest",
-            headers=CMC_HEADERS,
-            params={
-                "start": 1, "limit": 100, "convert": "USD",
-                "sort": "percent_change_24h", "sort_dir": "desc",
-            },
-            timeout=10,
-        )
-        return r.json().get("data", [])[:limit]
+        r = requests.get(f"{COINGECKO_BASE}/search/trending", timeout=10)
+        if r.status_code == 200:
+            return r.json().get("coins", [])
     except Exception as e:
         logger.error(f"get_trending_coins error: {e}")
     return []
@@ -220,14 +217,15 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_trending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Se încarcă trending...")
-    coins = get_trending_coins(7)
+    coins = get_trending_coins()
     if not coins:
         await update.message.reply_text("❌ Nu s-au putut obține datele.")
         return
-    lines = ["*🔥 Cele mai câștigătoare azi*\n"]
-    for c in coins:
-        chg = c["quote"]["USD"].get("percent_change_24h") or 0
-        lines.append(f"• *{c['name']}* ({c['symbol']})  🟢 ▲{chg:.1f}%")
+    lines = ["*🔥 Trending pe CoinGecko*\n"]
+    for item in coins[:7]:
+        c = item["item"]
+        rank = c.get("market_cap_rank", "?")
+        lines.append(f"• *{c['name']}* ({c['symbol']})  •  Rank #{rank}")
     keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown",
                                     reply_markup=InlineKeyboardMarkup(keyboard))
@@ -326,11 +324,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                       reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "trending":
-        coins = get_trending_coins(7)
-        lines = ["*🔥 Cele mai câștigătoare azi*\n"]
-        for c in coins:
-            chg = c["quote"]["USD"].get("percent_change_24h") or 0
-            lines.append(f"• *{c['name']}* ({c['symbol']})  🟢 ▲{chg:.1f}%")
+        coins = get_trending_coins()
+        lines = ["*🔥 Trending pe CoinGecko*\n"]
+        for item in coins[:7]:
+            c = item["item"]
+            rank = c.get("market_cap_rank", "?")
+            lines.append(f"• *{c['name']}* ({c['symbol']})  •  Rank #{rank}")
         keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
         await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(keyboard))
