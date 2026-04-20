@@ -156,7 +156,7 @@ def get_tv_analysis(symbol: str) -> dict | None:
             symbol=f"{symbol}USDT",
             screener="crypto",
             exchange="BINANCE",
-            interval=Interval.INTERVAL_1_DAY,
+            interval=Interval.INTERVAL_1_WEEKLY,
         )
         analysis = handler.get_analysis()
         return analysis
