@@ -14,7 +14,8 @@ Commands:
     /start       - Mesaj de bun venit
     /price       - Prețul unui coin (ex: /price bitcoin)
     /top         - Top 10 după market cap
-    /trending    - Cele mai câștigătoare 24h
+    /trending    - Trending pe CoinGecko
+    /analiza     - Analiză tehnică TradingView (ex: /analiza BTC)
     /alert       - Alertă de preț (ex: /alert bitcoin 60000)
     /myalerts    - Alertele tale active
     /removealert - Șterge o alertă
@@ -132,6 +133,133 @@ def get_trending_coins() -> list[dict]:
     return []
 
 
+
+# ─── TRADINGVIEW ANALYSIS ──────────────────────────────────────────────────────
+
+# Map nume comune → simbol TradingView
+COIN_SYMBOL_MAP = {
+    "bitcoin": "BTC", "ethereum": "ETH", "solana": "SOL",
+    "cardano": "ADA", "ripple": "XRP", "xrp": "XRP",
+    "dogecoin": "DOGE", "polkadot": "DOT", "avalanche": "AVAX",
+    "chainlink": "LINK", "litecoin": "LTC", "uniswap": "UNI",
+    "stellar": "XLM", "tron": "TRX", "shiba": "SHIB",
+    "bnb": "BNB", "binancecoin": "BNB", "matic": "MATIC",
+    "polygon": "MATIC", "near": "NEAR", "atom": "ATOM",
+    "cosmos": "ATOM", "fantom": "FTM", "algorand": "ALGO",
+}
+
+def get_tv_analysis(symbol: str) -> dict | None:
+    """Obține analiza tehnică de la TradingView via tradingview-ta."""
+    try:
+        from tradingview_ta import TA_Handler, Interval
+        handler = TA_Handler(
+            symbol=f"{symbol}USDT",
+            screener="crypto",
+            exchange="BINANCE",
+            interval=Interval.INTERVAL_1_DAY,
+        )
+        analysis = handler.get_analysis()
+        return analysis
+    except Exception as e:
+        logger.error(f"TradingView error: {e}")
+    return None
+
+def resolve_symbol(query: str) -> str:
+    """Rezolvă numele unui coin la simbolul său (ex: bitcoin → BTC)."""
+    q = query.strip().lower()
+    # Dacă e deja un simbol scurt (ex: BTC, ETH)
+    if len(q) <= 5:
+        return q.upper()
+    # Caută în mapare
+    return COIN_SYMBOL_MAP.get(q, q.upper())
+
+async def cmd_analiza(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text(
+            "Folosire: `/analiza bitcoin` sau `/analiza BTC`",
+            parse_mode="Markdown"
+        )
+        return
+
+    query = " ".join(context.args)
+    symbol = resolve_symbol(query)
+    await update.message.reply_text(f"⏳ Se analizează *{symbol}*...", parse_mode="Markdown")
+
+    analysis = get_tv_analysis(symbol)
+    if not analysis:
+        await update.message.reply_text(
+            f"❌ Nu s-a putut obține analiza pentru *{symbol}*\n"
+            f"Încearcă cu simbolul exact, ex: `/analiza BTC`",
+            parse_mode="Markdown"
+        )
+        return
+
+    s = analysis.summary
+    osc = analysis.oscillators
+    ma  = analysis.moving_averages
+    ind = analysis.indicators
+
+    # Semnal general
+    rec = s.get("RECOMMENDATION", "N/A")
+    emoji = {"BUY": "🟢", "STRONG_BUY": "🟢🟢", "SELL": "🔴",
+             "STRONG_SELL": "🔴🔴", "NEUTRAL": "🟡"}.get(rec, "⚪")
+
+    # Indicatori cheie
+    rsi    = ind.get("RSI", 0)
+    macd   = ind.get("MACD.macd", 0)
+    macd_s = ind.get("MACD.signal", 0)
+    ema20  = ind.get("EMA20", 0)
+    ema50  = ind.get("EMA50", 0)
+    ema200 = ind.get("EMA200", 0)
+    close  = ind.get("close", 0)
+
+    # RSI interpretare
+    if rsi >= 70:
+        rsi_txt = "Supracumpărat ⚠️"
+    elif rsi <= 30:
+        rsi_txt = "Supravândut ⚠️"
+    else:
+        rsi_txt = "Normal ✅"
+
+    # MACD interpretare
+    macd_txt = "🟢 Bullish" if macd > macd_s else "🔴 Bearish"
+
+    # Voturi
+    buy_s  = s.get("BUY", 0)
+    neu_s  = s.get("NEUTRAL", 0)
+    sell_s = s.get("SELL", 0)
+
+    buy_ma  = ma.get("BUY", 0)
+    neu_ma  = ma.get("NEUTRAL", 0)
+    sell_ma = ma.get("SELL", 0)
+
+    tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{symbol}USDT"
+
+    text = (
+        f"📊 *Analiză Tehnică — {symbol}/USDT*\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"{emoji} *Semnal general: {rec.replace('_', ' ')}*\n"
+        f"\n"
+        f"*📈 Oscilatori* (Buy {buy_s} | Neu {neu_s} | Sell {sell_s})\n"
+        f"• RSI (14): `{rsi:.1f}` — {rsi_txt}\n"
+        f"• MACD: {macd_txt}\n"
+        f"\n"
+        f"*📉 Medii Mobile* (Buy {buy_ma} | Neu {neu_ma} | Sell {sell_ma})\n"
+        f"• EMA 20:  `{fmt_price(ema20)}`\n"
+        f"• EMA 50:  `{fmt_price(ema50)}`\n"
+        f"• EMA 200: `{fmt_price(ema200)}`\n"
+        f"• Preț:    `{fmt_price(close)}`\n"
+        f"\n"
+        f"[📈 Vezi graficul pe TradingView]({tv_link})"
+    )
+
+    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"analiza:{symbol}")]]
+    await update.message.reply_text(
+        text, parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        disable_web_page_preview=True
+    )
+
 # ─── COMMAND HANDLERS ──────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -158,7 +286,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/price `<coin>` — Preț live și statistici\n"
         "  ex: `/price ethereum`\n\n"
         "/top — Top 10 monede după market cap\n\n"
-        "/trending — Cele mai câștigătoare azi\n\n"
+        "/trending — Trending pe CoinGecko\n\n"
+        "/analiza `<coin>` — Analiză tehnică TradingView\n"
+        "  ex: `/analiza BTC`\n\n"
         "/alert `<coin> <preț>` — Alertă de preț\n"
         "  ex: `/alert bitcoin 70000`\n\n"
         "/myalerts — Alertele tale active\n\n"
@@ -339,12 +469,56 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📖 *Comenzi disponibile*\n\n"
             "/price `<coin>` — Preț live\n"
             "/top — Top 10 monede\n"
-            "/trending — Cele mai câștigătoare azi\n"
+            "/trending — Trending CoinGecko\n"
+            "/analiza `<coin>` — Analiză tehnică TradingView\n"
             "/alert `<coin> <preț>` — Alertă de preț\n"
             "/myalerts — Alertele tale\n"
             "/removealert `<număr>` — Șterge alertă\n"
         )
         await query.edit_message_text(text, parse_mode="Markdown")
+
+    elif data.startswith("analiza:"):
+        symbol = data.split(":", 1)[1]
+        analysis = get_tv_analysis(symbol)
+        if not analysis:
+            await query.edit_message_text(f"❌ Nu s-a putut obține analiza pentru *{symbol}*", parse_mode="Markdown")
+            return
+        s = analysis.summary
+        osc = analysis.oscillators
+        ma  = analysis.moving_averages
+        ind = analysis.indicators
+        rec = s.get("RECOMMENDATION", "N/A")
+        emoji = {"BUY": "🟢", "STRONG_BUY": "🟢🟢", "SELL": "🔴", "STRONG_SELL": "🔴🔴", "NEUTRAL": "🟡"}.get(rec, "⚪")
+        rsi    = ind.get("RSI", 0)
+        macd   = ind.get("MACD.macd", 0)
+        macd_s = ind.get("MACD.signal", 0)
+        ema20  = ind.get("EMA20", 0)
+        ema50  = ind.get("EMA50", 0)
+        ema200 = ind.get("EMA200", 0)
+        close  = ind.get("close", 0)
+        rsi_txt = "Supracumpărat ⚠️" if rsi >= 70 else ("Supravândut ⚠️" if rsi <= 30 else "Normal ✅")
+        macd_txt = "🟢 Bullish" if macd > macd_s else "🔴 Bearish"
+        buy_s  = s.get("BUY", 0); neu_s = s.get("NEUTRAL", 0); sell_s = s.get("SELL", 0)
+        buy_ma = ma.get("BUY", 0); neu_ma = ma.get("NEUTRAL", 0); sell_ma = ma.get("SELL", 0)
+        tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{symbol}USDT"
+        text = (
+            f"📊 *Analiză Tehnică — {symbol}/USDT*\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"{emoji} *Semnal general: {rec.replace('_', ' ')}*\n\n"
+            f"*📈 Oscilatori* (Buy {buy_s} | Neu {neu_s} | Sell {sell_s})\n"
+            f"• RSI (14): `{rsi:.1f}` — {rsi_txt}\n"
+            f"• MACD: {macd_txt}\n\n"
+            f"*📉 Medii Mobile* (Buy {buy_ma} | Neu {neu_ma} | Sell {sell_ma})\n"
+            f"• EMA 20:  `{fmt_price(ema20)}`\n"
+            f"• EMA 50:  `{fmt_price(ema50)}`\n"
+            f"• EMA 200: `{fmt_price(ema200)}`\n"
+            f"• Preț:    `{fmt_price(close)}`\n\n"
+            f"[📈 Vezi graficul pe TradingView]({tv_link})"
+        )
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"analiza:{symbol}")]]
+        await query.edit_message_text(text, parse_mode="Markdown",
+                                      reply_markup=InlineKeyboardMarkup(keyboard),
+                                      disable_web_page_preview=True)
 
     elif data.startswith("price:"):
         coin_id = int(data.split(":", 1)[1])
@@ -413,6 +587,7 @@ def main():
     app.add_handler(CommandHandler("price", cmd_price))
     app.add_handler(CommandHandler("top", cmd_top))
     app.add_handler(CommandHandler("trending", cmd_trending))
+    app.add_handler(CommandHandler("analiza", cmd_analiza))
     app.add_handler(CommandHandler("alert", cmd_alert))
     app.add_handler(CommandHandler("myalerts", cmd_myalerts))
     app.add_handler(CommandHandler("removealert", cmd_removealert))
