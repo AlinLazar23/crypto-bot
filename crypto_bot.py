@@ -72,7 +72,7 @@ def cache_set(key: str, data):
 # Format: (slug_coingecko, simbol_afișat)
 
 BUBBLES_COINS = [
-      ("bitcoin",               "BTC"),
+    ("bitcoin",               "BTC"),
     ("ethereum",              "ETH"),
     ("tether",                "USDT"),
     ("usd-coin",              "USDC"),
@@ -139,15 +139,23 @@ def fmt_change_short(pct) -> str:
 # ─── MAP SLUG COINGECKO ────────────────────────────────────────────────────────
 
 COIN_SLUG_MAP = {
-      "BTC": "bitcoin", "ETH": "ethereum",
+    "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana",
     "BNB": "binancecoin", "XRP": "ripple", "ADA": "cardano",
     "DOGE": "dogecoin", "DOT": "polkadot", "AVAX": "avalanche-2",
-    "LINK": "chainlink", "ATOM": "cosmos",
-    "ALGO": "algorand", "SUI": "sui", "ARB": "arbitrum", "INJ": "injective-protocol",
-    "FET": "fetch-ai", "ICP": "internet-computer", "FIL": "filecoin", "VET": "vechain", "SEI": "sei-network",
+    "LINK": "chainlink", "LTC": "litecoin", "UNI": "uniswap",
+    "XLM": "stellar", "TRX": "tron", "SHIB": "shiba-inu",
+    "MATIC": "matic-network", "NEAR": "near", "ATOM": "cosmos",
+    "FTM": "fantom", "ALGO": "algorand", "XMR": "monero",
+    "PEPE": "pepe", "SUI": "sui", "APT": "aptos",
+    "ARB": "arbitrum", "OP": "optimism", "INJ": "injective-protocol",
+    "FET": "fetch-ai", "RENDER": "render-token", "WIF": "dogwifcoin",
+    "ICP": "internet-computer", "HBAR": "hedera-hashgraph",
+    "FIL": "filecoin", "VET": "vechain", "SEI": "sei-network",
     "TIA": "celestia", "GRT": "the-graph", "EGLD": "elrond-erd-2",
     "VIRTUAL": "virtuals-protocol", "HYPE": "hyperliquid",
-    "ASTR": "astar", "GALA": "gala",
+    "ASTR": "astar", "KAS": "kaspa", "IMX": "immutable-x",
+    "MNT": "mantle", "STX": "stacks", "FLOW": "flow",
+    "GALA": "gala", "OKB": "okb",
     # nume comune
     "bitcoin": "bitcoin", "ethereum": "ethereum", "solana": "solana",
     "ripple": "ripple", "cardano": "cardano", "dogecoin": "dogecoin",
