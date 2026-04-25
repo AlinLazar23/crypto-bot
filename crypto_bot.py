@@ -34,6 +34,7 @@ from telegram.ext import (
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
 BOT_TOKEN      = os.environ.get("BOT_TOKEN", "")  # ← Pune token-ul în Railway Variables, nu aici!
+ADMIN_ID       = 5988060477  # Singurul user care poate folosi botul
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 CHECK_ALERTS_INTERVAL = 60
 
@@ -43,6 +44,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 user_alerts: dict[int, list[dict]] = {}
+
+# ─── ADMIN CHECK ───────────────────────────────────────────────────────────────
+
+def is_admin(update) -> bool:
+    return update.effective_user.id == ADMIN_ID
+
+async def deny(update) -> None:
+    await update.message.reply_text("🔒 Acest bot este privat.")
 
 # ─── CACHE (evită rate limiting CoinGecko) ─────────────────────────────────────
 _cache: dict[str, tuple[any, float]] = {}  # key → (data, timestamp)
@@ -87,31 +96,9 @@ BUBBLES_COINS = [
     ("celestia",              "TIA"),
     ("the-graph",             "GRT"),
     ("elrond-erd-2",          "EGLD"),
-    ("solana",                "SOL"),
     ("binancecoin",           "BNB"),
     ("ripple",                "XRP"),
-    ("near",                  "NEAR"),
-    ("matic-network",         "MATIC"),
-    ("uniswap",               "UNI"),
-    ("stellar",               "XLM"),
-    ("tron",                  "TRX"),
-    ("shiba-inu",             "SHIB"),
-    ("fantom",                "FTM"),
-    ("monero",                "XMR"),
-    ("pepe",                  "PEPE"),
-    ("aptos",                 "APT"),
-    ("optimism",              "OP"),
     ("fetch-ai",              "FET"),
-    ("render-token",          "RENDER"),
-    ("dogwifcoin",            "WIF"),
-    ("litecoin",              "LTC"),
-    ("hedera-hashgraph",      "HBAR"),
-    ("okb",                   "OKB"),
-    ("kaspa",                 "KAS"),
-    ("immutable-x",           "IMX"),
-    ("mantle",                "MNT"),
-    ("stacks",                "STX"),
-    ("flow",                  "FLOW"),
     ("gala",                  "GALA"),
 ]
 
@@ -152,23 +139,15 @@ def fmt_change_short(pct) -> str:
 # ─── MAP SLUG COINGECKO ────────────────────────────────────────────────────────
 
 COIN_SLUG_MAP = {
-    "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana",
+    "BTC": "bitcoin", "ETH": "ethereum",
     "BNB": "binancecoin", "XRP": "ripple", "ADA": "cardano",
     "DOGE": "dogecoin", "DOT": "polkadot", "AVAX": "avalanche-2",
-    "LINK": "chainlink", "LTC": "litecoin", "UNI": "uniswap",
-    "XLM": "stellar", "TRX": "tron", "SHIB": "shiba-inu",
-    "MATIC": "matic-network", "NEAR": "near", "ATOM": "cosmos",
-    "FTM": "fantom", "ALGO": "algorand", "XMR": "monero",
-    "PEPE": "pepe", "SUI": "sui", "APT": "aptos",
-    "ARB": "arbitrum", "OP": "optimism", "INJ": "injective-protocol",
-    "FET": "fetch-ai", "RENDER": "render-token", "WIF": "dogwifcoin",
-    "ICP": "internet-computer", "HBAR": "hedera-hashgraph",
-    "FIL": "filecoin", "VET": "vechain", "SEI": "sei-network",
+    "LINK": "chainlink", "ATOM": "cosmos",
+    "ALGO": "algorand", "SUI": "sui", "ARB": "arbitrum", "INJ": "injective-protocol",
+    "FET": "fetch-ai", "ICP": "internet-computer", "FIL": "filecoin", "VET": "vechain", "SEI": "sei-network",
     "TIA": "celestia", "GRT": "the-graph", "EGLD": "elrond-erd-2",
     "VIRTUAL": "virtuals-protocol", "HYPE": "hyperliquid",
-    "ASTR": "astar", "KAS": "kaspa", "IMX": "immutable-x",
-    "MNT": "mantle", "STX": "stacks", "FLOW": "flow",
-    "GALA": "gala", "OKB": "okb",
+    "ASTR": "astar", "GALA": "gala",
     # nume comune
     "bitcoin": "bitcoin", "ethereum": "ethereum", "solana": "solana",
     "ripple": "ripple", "cardano": "cardano", "dogecoin": "dogecoin",
@@ -395,6 +374,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await deny(update)
+        return
     text = (
         "📖 *Comenzi disponibile*\n\n"
         "/price `<coin>` — Preț live\n"
@@ -415,6 +397,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="Markdown")
 
 async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await deny(update)
+        return
     if not context.args:
         await update.message.reply_text("Folosire: `/price BTC`", parse_mode="Markdown")
         return
@@ -447,6 +432,9 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_bubbles(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await deny(update)
+        return
     valid_periods = ["1h", "24h", "7d", "30d", "1y"]
     period = context.args[0].lower() if context.args else "24h"
     if period not in valid_periods:
@@ -484,6 +472,9 @@ async def cmd_bubbles(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(page, parse_mode="Markdown")
 
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await deny(update)
+        return
     await update.message.reply_text("⏳ Se încarcă top 10...")
     coins = get_top_coins(10)
     if not coins:
@@ -502,6 +493,9 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_trending(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await deny(update)
+        return
     await update.message.reply_text("⏳ Se încarcă trending...")
     coins = get_trending_coins()
     if not coins:
@@ -517,6 +511,9 @@ async def cmd_trending(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_analiza(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await deny(update)
+        return
     if not context.args:
         await update.message.reply_text("Folosire: `/analiza BTC`", parse_mode="Markdown")
         return
@@ -573,6 +570,9 @@ async def cmd_analiza(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=True)
 
 async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await deny(update)
+        return
     if len(context.args) < 2:
         await update.message.reply_text("Folosire: `/alert BTC 70000`", parse_mode="Markdown")
         return
@@ -604,6 +604,9 @@ async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown")
 
 async def cmd_myalerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await deny(update)
+        return
     uid    = update.effective_user.id
     alerts = user_alerts.get(uid, [])
     if not alerts:
@@ -617,6 +620,9 @@ async def cmd_myalerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 async def cmd_removealert(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await deny(update)
+        return
     uid    = update.effective_user.id
     alerts = user_alerts.get(uid, [])
     if not alerts:
