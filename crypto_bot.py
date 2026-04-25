@@ -51,7 +51,7 @@ def is_admin(update) -> bool:
     return update.effective_user.id == ADMIN_ID
 
 async def deny(update) -> None:
-    await update.message.reply_text("🔒 Acest bot este privat.")
+    await update.message.reply_text("🔒 Aceasta comanda este privata.")
 
 # ─── CACHE (evită rate limiting CoinGecko) ─────────────────────────────────────
 _cache: dict[str, tuple[any, float]] = {}  # key → (data, timestamp)
