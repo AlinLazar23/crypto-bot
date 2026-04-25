@@ -51,7 +51,7 @@ def is_admin(update) -> bool:
     return update.effective_user.id == ADMIN_ID
 
 async def deny(update) -> None:
-    await update.message.reply_text("🔒 Aceasta comanda este privata.")
+    await update.message.reply_text("🔒 Acest bot este privat.")
 
 # ─── CACHE (evită rate limiting CoinGecko) ─────────────────────────────────────
 _cache: dict[str, tuple[any, float]] = {}  # key → (data, timestamp)
@@ -139,7 +139,7 @@ def fmt_change_short(pct) -> str:
 # ─── MAP SLUG COINGECKO ────────────────────────────────────────────────────────
 
 COIN_SLUG_MAP = {
-    "BTC": "bitcoin", "ETH": "ethereum",
+     "BTC": "bitcoin", "ETH": "ethereum",
     "BNB": "binancecoin", "XRP": "ripple", "ADA": "cardano",
     "DOGE": "dogecoin", "DOT": "polkadot", "AVAX": "avalanche-2",
     "LINK": "chainlink", "ATOM": "cosmos",
@@ -351,13 +351,270 @@ def format_bubbles(coins: list[dict], period: str) -> list[str]:
 
 # ─── COMMAND HANDLERS ──────────────────────────────────────────────────────────
 
+
+# ─── STATS DATA SOURCES ────────────────────────────────────────────────────────
+
+def get_fear_greed() -> dict | None:
+    """Fear & Greed Index de pe alternative.me — gratuit, fără API key."""
+    try:
+        r = requests.get(
+            "https://api.alternative.me/fng/?limit=8",
+            timeout=10,
+        )
+        if r.status_code == 200:
+            data = r.json().get("data", [])
+            if not data:
+                return None
+            today     = data[0]
+            yesterday = data[1] if len(data) > 1 else data[0]
+            week_vals = [int(d["value"]) for d in data]
+            return {
+                "value":      int(today["value"]),
+                "label":      today["value_classification"],
+                "yesterday":  int(yesterday["value"]),
+                "week_avg":   round(sum(week_vals) / len(week_vals), 1),
+                "history":    week_vals,
+            }
+    except Exception as e:
+        logger.error(f"get_fear_greed error: {e}")
+    return None
+
+def get_global_market() -> dict | None:
+    """Date globale piață: market cap, volum, dominance — de pe CoinGecko."""
+    try:
+        r = requests.get(f"{COINGECKO_BASE}/global", timeout=10)
+        if r.status_code == 200:
+            d = r.json().get("data", {})
+            return {
+                "total_market_cap":    d.get("total_market_cap", {}).get("usd", 0),
+                "total_volume_24h":    d.get("total_volume", {}).get("usd", 0),
+                "btc_dominance":       round(d.get("market_cap_percentage", {}).get("btc", 0), 1),
+                "eth_dominance":       round(d.get("market_cap_percentage", {}).get("eth", 0), 1),
+                "market_cap_change_24h": d.get("market_cap_change_percentage_24h_usd", 0),
+            }
+    except Exception as e:
+        logger.error(f"get_global_market error: {e}")
+    return None
+
+def get_btc_eth_prices() -> dict:
+    """Prețuri BTC și ETH de pe CoinGecko."""
+    try:
+        r = requests.get(
+            f"{COINGECKO_BASE}/simple/price",
+            params={"ids": "bitcoin,ethereum", "vs_currencies": "usd",
+                    "include_24hr_change": "true"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            d = r.json()
+            return {
+                "btc_price":  d.get("bitcoin", {}).get("usd", 0),
+                "btc_change": d.get("bitcoin", {}).get("usd_24h_change", 0),
+                "eth_price":  d.get("ethereum", {}).get("usd", 0),
+                "eth_change": d.get("ethereum", {}).get("usd_24h_change", 0),
+            }
+    except Exception as e:
+        logger.error(f"get_btc_eth_prices error: {e}")
+    return {}
+
+# ─── STATS ENGINE ──────────────────────────────────────────────────────────────
+
+def fng_emoji(value: int) -> str:
+    if value <= 25:   return "😱"
+    if value <= 45:   return "😰"
+    if value <= 55:   return "😐"
+    if value <= 75:   return "😄"
+    return "🤑"
+
+def fng_bar(value: int) -> str:
+    filled = value // 10
+    return "█" * filled + "░" * (10 - filled)
+
+def interpret_fng(value: int) -> str:
+    if value <= 20:
+        return "💡 Panică extremă → zonă istorică de acumulare"
+    if value <= 40:
+        return "💡 Frică în piață → posibilă oportunitate de cumpărare"
+    if value <= 60:
+        return "💡 Piața este neutră → așteaptă confirmare direcție"
+    if value <= 80:
+        return "⚠️ Lăcomie crescută → fii precaut, nu urmări FOMO"
+    return "🚨 Euforie extremă → risc ridicat de corecție"
+
+def calc_market_score(fg: dict, global_data: dict, prices: dict) -> tuple[int, str]:
+    """
+    Calculează un scor 1-10 bazat pe sentiment, trend, volum, dominance.
+    Returnează (scor, label).
+    """
+    score = 5.0  # neutru
+
+    # Fear & Greed (0-100 → contribuție ±2)
+    fng_val = fg.get("value", 50)
+    if fng_val <= 20:   score += 1.5   # panică extremă = oportunitate
+    elif fng_val <= 40: score += 0.5
+    elif fng_val <= 60: score += 0.0
+    elif fng_val <= 80: score -= 0.5
+    else:               score -= 1.5   # euforie = risc
+
+    # Trend F&G (față de ieri)
+    trend = fng_val - fg.get("yesterday", fng_val)
+    if trend > 5:    score += 0.5
+    elif trend < -5: score -= 0.5
+
+    # BTC dominance: >55% = altcoins slabe (bear for alts), <40% = altseason
+    btc_dom = global_data.get("btc_dominance", 50)
+    if btc_dom > 55:   score -= 0.5
+    elif btc_dom < 42: score += 0.5
+
+    # Market cap change 24h
+    cap_chg = global_data.get("market_cap_change_24h", 0)
+    if cap_chg > 3:    score += 1.0
+    elif cap_chg > 1:  score += 0.5
+    elif cap_chg < -3: score -= 1.0
+    elif cap_chg < -1: score -= 0.5
+
+    # BTC price change 24h
+    btc_chg = prices.get("btc_change", 0)
+    if btc_chg > 3:    score += 0.5
+    elif btc_chg < -3: score -= 0.5
+
+    score = max(1, min(10, round(score)))
+
+    if score <= 3:   label = "Bearish 🔴"
+    elif score <= 4: label = "Slab Bearish 🟠"
+    elif score <= 6: label = "Neutru 🟡"
+    elif score <= 8: label = "Bullish 🟢"
+    else:            label = "Strong Bullish 🟢🟢"
+
+    return score, label
+
+def generate_insight(fg: dict, global_data: dict, prices: dict) -> str:
+    """Generează un insight automat bazat pe combinația de date."""
+    fng_val = fg.get("value", 50)
+    btc_chg = prices.get("btc_change", 0)
+    cap_chg = global_data.get("market_cap_change_24h", 0)
+    btc_dom = global_data.get("btc_dominance", 50)
+    week_avg = fg.get("week_avg", 50)
+
+    insights = []
+
+    # Divergență F&G vs BTC price
+    if fng_val <= 35 and btc_chg >= 0:
+        insights.append("📊 Deși piața e în frică, BTC rezistă → posibilă acumulare instituțională")
+    elif fng_val >= 70 and btc_chg < -1:
+        insights.append("⚠️ Greed ridicat dar BTC scade → semnal de slăbiciune, fii atent")
+
+    # Trend săptămânal vs azi
+    if fng_val > week_avg + 10:
+        insights.append("📈 Sentimentul s-a îmbunătățit față de săptămâna trecută → momentum pozitiv")
+    elif fng_val < week_avg - 10:
+        insights.append("📉 Sentimentul s-a deteriorat față de media săptămânii → prudență")
+
+    # Market cap + volum
+    if cap_chg > 2:
+        insights.append("💹 Market cap-ul total crește cu volum → trend bullish confirmat")
+    elif cap_chg < -2:
+        insights.append("📉 Scădere generalizată în piață → risc crescut pe termen scurt")
+
+    # BTC dominance
+    if btc_dom > 58:
+        insights.append("🔶 BTC dominance ridicat → altcoin-urile suferă, capital concentrat în BTC")
+    elif btc_dom < 42:
+        insights.append("🟣 BTC dominance scăzut → posibilă altseason în desfășurare")
+
+    # Panică extremă
+    if fng_val <= 15:
+        insights.append("🚨 Panică extremă istorică → zonele acestea au coincis cu fundul pieței în trecut")
+
+    if not insights:
+        insights.append("➡️ Piața este echilibrată momentan — niciun semnal extrem detectat")
+
+    return "\n".join(f"  {i}" for i in insights[:3])  # max 3 insights
+
+def format_stats(fg: dict, global_data: dict, prices: dict) -> str:
+    from datetime import datetime
+    now = datetime.utcnow().strftime("%H:%M UTC")
+
+    fng_val   = fg["value"]
+    fng_label = fg["label"]
+    fng_trend = fng_val - fg["yesterday"]
+    if fng_trend > 0:
+        trend_arrow = f"\u2191 +{fng_trend}"
+    elif fng_trend < 0:
+        trend_arrow = f"\u2193 {fng_trend}"
+    else:
+        trend_arrow = "\u2192 0"
+    bar = fng_bar(fng_val)
+
+    score, score_label = calc_market_score(fg, global_data, prices)
+    score_bar = "\u2b50" * score + "\u2606" * (10 - score)
+    insight   = generate_insight(fg, global_data, prices)
+
+    cap_chg   = global_data.get("market_cap_change_24h", 0)
+    cap_arrow = "\U0001f7e2 \u25b2" if cap_chg >= 0 else "\U0001f534 \u25bc"
+    btc_arrow = "\U0001f7e2 \u25b2" if prices.get("btc_change", 0) >= 0 else "\U0001f534 \u25bc"
+    eth_arrow = "\U0001f7e2 \u25b2" if prices.get("eth_change", 0) >= 0 else "\U0001f534 \u25bc"
+
+    lines = [
+        "\U0001f4ca *Market Stats* \u2014 " + now,
+        "\u2501" * 20,
+        "",
+        "\U0001f9e0 *SENTIMENT PIAT\u0102*",
+        fng_emoji(fng_val) + f" Fear & Greed: *{fng_val}/100* \u2014 _{fng_label}_",
+        f"`[{bar}]`",
+        f"\u2022 Fat\u0103 de ieri: `{trend_arrow}`",
+        f"\u2022 Media 7 zile: `{fg['week_avg']}/100`",
+        "\u2022 " + interpret_fng(fng_val),
+        "",
+        "\U0001f4b0 *OVERVIEW PIAT\u0102*",
+        f"\u2022 BTC:  `{fmt_price(prices.get('btc_price', 0))}`  {btc_arrow} `{abs(prices.get('btc_change', 0)):.1f}%`",
+        f"\u2022 ETH:  `{fmt_price(prices.get('eth_price', 0))}`  {eth_arrow} `{abs(prices.get('eth_change', 0)):.1f}%`",
+        f"\u2022 Mkt Cap Total: `{fmt_large(global_data.get('total_market_cap', 0))}`  {cap_arrow} `{abs(cap_chg):.1f}%`",
+        f"\u2022 Volum 24h:     `{fmt_large(global_data.get('total_volume_24h', 0))}`",
+        f"\u2022 BTC Dominance: `{global_data.get('btc_dominance', 0)}%`",
+        f"\u2022 ETH Dominance: `{global_data.get('eth_dominance', 0)}%`",
+        "",
+        "\U0001f9ea *INSIGHT AUTOMAT*",
+        insight,
+        "",
+        f"\u26a1 *MARKET SCORE: {score}/10 \u2014 {score_label}*",
+        f"`{score_bar}`",
+        "_Bazat pe: sentiment + trend + volum + dominance_",
+    ]
+    return "\n".join(lines)
+
+# ─── CMD STATS ─────────────────────────────────────────────────────────────────
+
+async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await deny(update)
+        return
+
+    msg = await update.message.reply_text("⏳ Se calculează statisticile pieței...")
+
+    fg          = get_fear_greed()
+    global_data = get_global_market()
+    prices      = get_btc_eth_prices()
+
+    if not fg or not global_data or not prices:
+        await msg.edit_text("❌ Nu s-au putut obține datele. Încearcă din nou.")
+        return
+
+    text = format_stats(fg, global_data, prices)
+    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
+    await msg.edit_text(
+        text, parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📊 Top 10",      callback_data="top"),
          InlineKeyboardButton("🔥 Trending",    callback_data="trending")],
         [InlineKeyboardButton("🫧 Bubbles 24h", callback_data="bubbles:24h"),
          InlineKeyboardButton("📈 Analiză BTC", callback_data="analiza:BTC")],
-        [InlineKeyboardButton("❓ Help",         callback_data="help")],
+        [InlineKeyboardButton("📊 Stats",        callback_data="stats"),
+         InlineKeyboardButton("❓ Help",          callback_data="help")],
     ]
     await update.message.reply_text(
         "👋 *Bun venit la CryptoBot!*\n\n"
@@ -389,6 +646,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/top — Top 10 după market cap\n\n"
         "/trending — Trending pe CoinGecko\n\n"
         "/analiza `<coin>` — Analiză TradingView\n\n"
+        "/stats — Statistici piață + Market Score\n\n"
         "/alert `<coin> <preț>` — Alertă de preț\n\n"
         "/myalerts — Alertele tale active\n\n"
         "/removealert `<număr>` — Șterge alerta\n\n"
@@ -697,6 +955,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for page in pages[1:]:
             await query.message.reply_text(page, parse_mode="Markdown")
 
+    elif data == "stats":
+        fg          = get_fear_greed()
+        global_data = get_global_market()
+        prices      = get_btc_eth_prices()
+        if not fg or not global_data or not prices:
+            await query.edit_message_text("❌ Nu s-au putut obține datele.")
+            return
+        text = format_stats(fg, global_data, prices)
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
+        await query.edit_message_text(
+            text, parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard))
+
     elif data == "help":
         text = (
             "📖 *Comenzi disponibile*\n\n"
@@ -827,6 +1098,7 @@ def main():
     app.add_handler(CommandHandler("bubbles",     cmd_bubbles))
     app.add_handler(CommandHandler("top",         cmd_top))
     app.add_handler(CommandHandler("trending",    cmd_trending))
+    app.add_handler(CommandHandler("stats",       cmd_stats))
     app.add_handler(CommandHandler("analiza",     cmd_analiza))
     app.add_handler(CommandHandler("alert",       cmd_alert))
     app.add_handler(CommandHandler("myalerts",    cmd_myalerts))
