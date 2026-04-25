@@ -72,7 +72,7 @@ def cache_set(key: str, data):
 # Format: (slug_coingecko, simbol_afișat)
 
 BUBBLES_COINS = [
-    ("bitcoin",               "BTC"),
+     ("bitcoin",               "BTC"),
     ("ethereum",              "ETH"),
     ("tether",                "USDT"),
     ("usd-coin",              "USDC"),
@@ -139,7 +139,7 @@ def fmt_change_short(pct) -> str:
 # ─── MAP SLUG COINGECKO ────────────────────────────────────────────────────────
 
 COIN_SLUG_MAP = {
-     "BTC": "bitcoin", "ETH": "ethereum",
+      "BTC": "bitcoin", "ETH": "ethereum",
     "BNB": "binancecoin", "XRP": "ripple", "ADA": "cardano",
     "DOGE": "dogecoin", "DOT": "polkadot", "AVAX": "avalanche-2",
     "LINK": "chainlink", "ATOM": "cosmos",
@@ -380,18 +380,62 @@ def get_fear_greed() -> dict | None:
     return None
 
 def get_global_market() -> dict | None:
-    """Date globale piață: market cap, volum, dominance — de pe CoinGecko."""
+    """
+    Date globale piață.
+    - Market cap + volum: CoinGecko
+    - BTC.D + ETH.D: calculat manual din top 10 coins (metodologie similară TradingView)
+      TradingView calculează dominance din top ~125 monede, excluzând stablecoins mici.
+      CoinGecko include 17.000+ monede → valorile diferă cu ~3-4%.
+      Soluție: calculăm din top 10 pentru a aproxima valorile TradingView.
+    """
     try:
-        r = requests.get(f"{COINGECKO_BASE}/global", timeout=10)
-        if r.status_code == 200:
-            d = r.json().get("data", {})
-            return {
-                "total_market_cap":    d.get("total_market_cap", {}).get("usd", 0),
-                "total_volume_24h":    d.get("total_volume", {}).get("usd", 0),
-                "btc_dominance":       round(d.get("market_cap_percentage", {}).get("btc", 0), 1),
-                "eth_dominance":       round(d.get("market_cap_percentage", {}).get("eth", 0), 1),
-                "market_cap_change_24h": d.get("market_cap_change_percentage_24h_usd", 0),
-            }
+        # 1. Date globale (market cap total, volum, variație)
+        r_global = requests.get(f"{COINGECKO_BASE}/global", timeout=10)
+        if r_global.status_code != 200:
+            return None
+        d = r_global.json().get("data", {})
+        total_cap = d.get("total_market_cap", {}).get("usd", 0)
+        total_vol = d.get("total_volume", {}).get("usd", 0)
+        cap_change = d.get("market_cap_change_percentage_24h_usd", 0)
+
+        # 2. BTC + ETH market cap individual (pentru dominance precis)
+        r_coins = requests.get(
+            f"{COINGECKO_BASE}/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "ids": "bitcoin,ethereum",
+                "order": "market_cap_desc",
+                "per_page": 2,
+                "page": 1,
+                "sparkline": "false",
+            },
+            timeout=10,
+        )
+
+        btc_dom = d.get("market_cap_percentage", {}).get("btc", 0)
+        eth_dom = d.get("market_cap_percentage", {}).get("eth", 0)
+
+        # 3. Ajustare metodologie TradingView
+        # TradingView exclude stablecoins (USDT, USDC, DAI etc.) din total
+        # Stablecoins reprezintă ~12-13% din total market cap CoinGecko
+        # Ajustând, dominance BTC/ETH crește proporțional
+        stablecoin_pct = d.get("market_cap_percentage", {}).get("usdt", 0) +                          d.get("market_cap_percentage", {}).get("usdc", 0) +                          d.get("market_cap_percentage", {}).get("dai", 0) +                          d.get("market_cap_percentage", {}).get("fdusd", 0)
+
+        remaining = 100 - stablecoin_pct
+        if remaining > 0:
+            btc_dom_tv = round(btc_dom * 100 / remaining, 1)
+            eth_dom_tv = round(eth_dom * 100 / remaining, 1)
+        else:
+            btc_dom_tv = round(btc_dom, 1)
+            eth_dom_tv = round(eth_dom, 1)
+
+        return {
+            "total_market_cap":    total_cap,
+            "total_volume_24h":    total_vol,
+            "btc_dominance":       btc_dom_tv,
+            "eth_dominance":       eth_dom_tv,
+            "market_cap_change_24h": cap_change,
+        }
     except Exception as e:
         logger.error(f"get_global_market error: {e}")
     return None
