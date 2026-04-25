@@ -388,65 +388,23 @@ def get_fear_greed() -> dict | None:
     return None
 
 def get_global_market() -> dict | None:
-    """
-    Date globale piață.
-    - Market cap + volum: CoinGecko
-    - BTC.D + ETH.D: calculat manual din top 10 coins (metodologie similară TradingView)
-      TradingView calculează dominance din top ~125 monede, excluzând stablecoins mici.
-      CoinGecko include 17.000+ monede → valorile diferă cu ~3-4%.
-      Soluție: calculăm din top 10 pentru a aproxima valorile TradingView.
-    """
+    """Date globale piata direct de pe CoinGecko — fara ajustari."""
     try:
-        # 1. Date globale (market cap total, volum, variație)
-        r_global = requests.get(f"{COINGECKO_BASE}/global", timeout=10)
-        if r_global.status_code != 200:
+        r = requests.get(f"{COINGECKO_BASE}/global", timeout=10)
+        if r.status_code != 200:
             return None
-        d = r_global.json().get("data", {})
-        total_cap = d.get("total_market_cap", {}).get("usd", 0)
-        total_vol = d.get("total_volume", {}).get("usd", 0)
-        cap_change = d.get("market_cap_change_percentage_24h_usd", 0)
-
-        # 2. BTC + ETH market cap individual (pentru dominance precis)
-        r_coins = requests.get(
-            f"{COINGECKO_BASE}/coins/markets",
-            params={
-                "vs_currency": "usd",
-                "ids": "bitcoin,ethereum",
-                "order": "market_cap_desc",
-                "per_page": 2,
-                "page": 1,
-                "sparkline": "false",
-            },
-            timeout=10,
-        )
-
-        btc_dom = d.get("market_cap_percentage", {}).get("btc", 0)
-        eth_dom = d.get("market_cap_percentage", {}).get("eth", 0)
-
-        # 3. Ajustare metodologie TradingView
-        # TradingView exclude stablecoins (USDT, USDC, DAI etc.) din total
-        # Stablecoins reprezintă ~12-13% din total market cap CoinGecko
-        # Ajustând, dominance BTC/ETH crește proporțional
-        stablecoin_pct = d.get("market_cap_percentage", {}).get("usdt", 0) +                          d.get("market_cap_percentage", {}).get("usdc", 0) +                          d.get("market_cap_percentage", {}).get("dai", 0) +                          d.get("market_cap_percentage", {}).get("fdusd", 0)
-
-        remaining = 100 - stablecoin_pct
-        if remaining > 0:
-            btc_dom_tv = round(btc_dom * 100 / remaining, 1)
-            eth_dom_tv = round(eth_dom * 100 / remaining, 1)
-        else:
-            btc_dom_tv = round(btc_dom, 1)
-            eth_dom_tv = round(eth_dom, 1)
-
+        d = r.json().get("data", {})
         return {
-            "total_market_cap":    total_cap,
-            "total_volume_24h":    total_vol,
-            "btc_dominance":       btc_dom_tv,
-            "eth_dominance":       eth_dom_tv,
-            "market_cap_change_24h": cap_change,
+            "total_market_cap":      d.get("total_market_cap", {}).get("usd", 0),
+            "total_volume_24h":      d.get("total_volume", {}).get("usd", 0),
+            "btc_dominance":         round(d.get("market_cap_percentage", {}).get("btc", 0), 2),
+            "eth_dominance":         round(d.get("market_cap_percentage", {}).get("eth", 0), 2),
+            "market_cap_change_24h": d.get("market_cap_change_percentage_24h_usd", 0),
         }
     except Exception as e:
         logger.error(f"get_global_market error: {e}")
     return None
+
 
 def get_btc_eth_prices() -> dict:
     """Prețuri BTC și ETH de pe CoinGecko."""
@@ -584,8 +542,31 @@ def generate_insight(fg: dict, global_data: dict, prices: dict) -> str:
     return "\n".join(f"  {i}" for i in insights[:3])  # max 3 insights
 
 def format_stats(fg: dict, global_data: dict, prices: dict) -> str:
-    from datetime import datetime
-    now = datetime.utcnow().strftime("%H:%M UTC")
+    from datetime import datetime, timezone, timedelta
+    # Romania: UTC+2 iarna (EET), UTC+3 vara (EEST)
+    # Detectam automat ora de vara: ultima duminica martie - ultima duminica octombrie
+    utc_now = datetime.now(timezone.utc)
+    year = utc_now.year
+    # Ultima duminica din martie
+    march_last_sunday = max(
+        datetime(year, 3, day, 1, tzinfo=timezone.utc)
+        for day in range(25, 32)
+        if datetime(year, 3, day).weekday() == 6
+    )
+    # Ultima duminica din octombrie
+    oct_last_sunday = max(
+        datetime(year, 10, day, 1, tzinfo=timezone.utc)
+        for day in range(25, 32)
+        if datetime(year, 10, day).weekday() == 6
+    )
+    if march_last_sunday <= utc_now < oct_last_sunday:
+        ro_offset = timedelta(hours=3)   # EEST (vara)
+        ro_label  = "EEST"
+    else:
+        ro_offset = timedelta(hours=2)   # EET (iarna)
+        ro_label  = "EET"
+    ro_now = utc_now + ro_offset
+    now = ro_now.strftime(f"%H:%M {ro_label} (%d.%m.%Y)")
 
     fng_val   = fg["value"]
     fng_label = fg["label"]
