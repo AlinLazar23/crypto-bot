@@ -21,6 +21,7 @@ Commands:
 """
 
 import os
+import time
 import logging
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -32,7 +33,7 @@ from telegram.ext import (
 )
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
-BOT_TOKEN      = os.environ.get("BOT_TOKEN", "")
+BOT_TOKEN      = os.environ.get("BOT_TOKEN", "")  # ← Pune token-ul în Railway Variables, nu aici!
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 CHECK_ALERTS_INTERVAL = 60
 
@@ -42,6 +43,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 user_alerts: dict[int, list[dict]] = {}
+
+# ─── CACHE (evită rate limiting CoinGecko) ─────────────────────────────────────
+_cache: dict[str, tuple[any, float]] = {}  # key → (data, timestamp)
+CACHE_TTL = 120  # secunde (2 minute)
+
+def cache_get(key: str):
+    if key in _cache:
+        data, ts = _cache[key]
+        if time.time() - ts < CACHE_TTL:
+            return data
+    return None
+
+def cache_set(key: str, data):
+    _cache[key] = (data, time.time())
 
 # ─── MONEDE CRYPTOBUBBLES ──────────────────────────────────────────────────────
 # Exact monedele vizibile pe cryptobubbles.net (din screenshot-urile tale)
@@ -72,8 +87,31 @@ BUBBLES_COINS = [
     ("celestia",              "TIA"),
     ("the-graph",             "GRT"),
     ("elrond-erd-2",          "EGLD"),
+    ("solana",                "SOL"),
+    ("binancecoin",           "BNB"),
     ("ripple",                "XRP"),
+    ("near",                  "NEAR"),
+    ("matic-network",         "MATIC"),
+    ("uniswap",               "UNI"),
+    ("stellar",               "XLM"),
+    ("tron",                  "TRX"),
+    ("shiba-inu",             "SHIB"),
+    ("fantom",                "FTM"),
+    ("monero",                "XMR"),
+    ("pepe",                  "PEPE"),
+    ("aptos",                 "APT"),
+    ("optimism",              "OP"),
     ("fetch-ai",              "FET"),
+    ("render-token",          "RENDER"),
+    ("dogwifcoin",            "WIF"),
+    ("litecoin",              "LTC"),
+    ("hedera-hashgraph",      "HBAR"),
+    ("okb",                   "OKB"),
+    ("kaspa",                 "KAS"),
+    ("immutable-x",           "IMX"),
+    ("mantle",                "MNT"),
+    ("stacks",                "STX"),
+    ("flow",                  "FLOW"),
     ("gala",                  "GALA"),
 ]
 
@@ -114,15 +152,23 @@ def fmt_change_short(pct) -> str:
 # ─── MAP SLUG COINGECKO ────────────────────────────────────────────────────────
 
 COIN_SLUG_MAP = {
-    "BTC": "bitcoin", "ETH": "ethereum", 
+    "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana",
     "BNB": "binancecoin", "XRP": "ripple", "ADA": "cardano",
     "DOGE": "dogecoin", "DOT": "polkadot", "AVAX": "avalanche-2",
-    "LINK": "chainlink", "ATOM": "cosmos",
-    "ALGO": "algorand", "SUI": "sui", "ARB": "arbitrum", "INJ": "injective-protocol",
-    "FET": "fetch-ai", "ICP": "internet-computer", "FIL": "filecoin", "VET": "vechain", "SEI": "sei-network",
+    "LINK": "chainlink", "LTC": "litecoin", "UNI": "uniswap",
+    "XLM": "stellar", "TRX": "tron", "SHIB": "shiba-inu",
+    "MATIC": "matic-network", "NEAR": "near", "ATOM": "cosmos",
+    "FTM": "fantom", "ALGO": "algorand", "XMR": "monero",
+    "PEPE": "pepe", "SUI": "sui", "APT": "aptos",
+    "ARB": "arbitrum", "OP": "optimism", "INJ": "injective-protocol",
+    "FET": "fetch-ai", "RENDER": "render-token", "WIF": "dogwifcoin",
+    "ICP": "internet-computer", "HBAR": "hedera-hashgraph",
+    "FIL": "filecoin", "VET": "vechain", "SEI": "sei-network",
     "TIA": "celestia", "GRT": "the-graph", "EGLD": "elrond-erd-2",
     "VIRTUAL": "virtuals-protocol", "HYPE": "hyperliquid",
-    "ASTR": "astar", "GALA": "gala",
+    "ASTR": "astar", "KAS": "kaspa", "IMX": "immutable-x",
+    "MNT": "mantle", "STX": "stacks", "FLOW": "flow",
+    "GALA": "gala", "OKB": "okb",
     # nume comune
     "bitcoin": "bitcoin", "ethereum": "ethereum", "solana": "solana",
     "ripple": "ripple", "cardano": "cardano", "dogecoin": "dogecoin",
@@ -178,6 +224,10 @@ def get_coin_data(slug: str) -> dict | None:
     return None
 
 def get_top_coins(limit: int = 10) -> list[dict]:
+    cache_key = f"top:{limit}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
     try:
         r = requests.get(
             f"{COINGECKO_BASE}/coins/markets",
@@ -186,10 +236,12 @@ def get_top_coins(limit: int = 10) -> list[dict]:
             timeout=10,
         )
         if r.status_code == 200:
-            return [{"symbol": c["symbol"].upper(), "name": c["name"],
+            result = [{"symbol": c["symbol"].upper(), "name": c["name"],
                      "slug": c["id"], "price": c["current_price"],
                      "change_24h": c.get("price_change_percentage_24h") or 0}
                     for c in r.json()]
+            cache_set(cache_key, result)
+            return result
     except Exception as e:
         logger.error(f"get_top_coins error: {e}")
     return []
@@ -206,15 +258,14 @@ def get_trending_coins() -> list[dict]:
 def get_bubbles_data(period: str = "24h") -> list[dict]:
     """
     Fetch toate monedele din lista CryptoBubbles cu performanța pe perioada cerută.
-    Folosește /coins/markets cu price_change_percentage pentru eficiență.
+    Folosește cache 2 minute pentru a evita rate limiting CoinGecko.
     """
-    period_map = {
-        "1h":  "1h",
-        "24h": "24h",
-        "7d":  "7d",
-        "30d": "30d",
-        "1y":  "1y",
-    }
+    cache_key = f"bubbles:{period}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        logger.info(f"Cache hit pentru bubbles:{period}")
+        return cached
+
     slugs = [slug for slug, _ in BUBBLES_COINS]
 
     try:
@@ -248,6 +299,7 @@ def get_bubbles_data(period: str = "24h") -> list[dict]:
                     "market_cap": c.get("market_cap", 0),
                     "volume_24h": c.get("total_volume", 0),
                 })
+            cache_set(cache_key, result)
             return result
     except Exception as e:
         logger.error(f"get_bubbles_data error: {e}")
