@@ -72,7 +72,7 @@ def cache_set(key: str, data):
 # Format: (slug_coingecko, simbol_afișat)
 
 BUBBLES_COINS = [
-     ("bitcoin",               "BTC"),
+      ("bitcoin",               "BTC"),
     ("ethereum",              "ETH"),
     ("tether",                "USDT"),
     ("usd-coin",              "USDC"),
