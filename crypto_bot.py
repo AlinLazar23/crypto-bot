@@ -34,7 +34,6 @@ from telegram.ext import (
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
 BOT_TOKEN      = os.environ.get("BOT_TOKEN", "")  # ← Pune token-ul în Railway Variables, nu aici!
-ADMIN_ID       = 5988060477  # Singurul user care poate folosi botul
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 CHECK_ALERTS_INTERVAL = 60
 
@@ -45,13 +44,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 user_alerts: dict[int, list[dict]] = {}
 
-# ─── ADMIN CHECK ───────────────────────────────────────────────────────────────
 
-def is_admin(update) -> bool:
-    return update.effective_user.id == ADMIN_ID
-
-async def deny(update) -> None:
-    await update.message.reply_text("🔒 Acest bot este privat.")
 
 # ─── CACHE (evită rate limiting CoinGecko) ─────────────────────────────────────
 _cache: dict[str, tuple[any, float]] = {}  # key → (data, timestamp)
@@ -619,9 +612,6 @@ def format_stats(fg: dict, global_data: dict, prices: dict) -> str:
 # ─── CMD STATS ─────────────────────────────────────────────────────────────────
 
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await deny(update)
-        return
 
     msg = await update.message.reply_text("⏳ Se calculează statisticile pieței...")
 
@@ -664,9 +654,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await deny(update)
-        return
     text = (
         "📖 *Comenzi disponibile*\n\n"
         "/price `<coin>` — Preț live\n"
@@ -688,9 +675,6 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="Markdown")
 
 async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await deny(update)
-        return
     if not context.args:
         await update.message.reply_text("Folosire: `/price BTC`", parse_mode="Markdown")
         return
@@ -723,9 +707,6 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_bubbles(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await deny(update)
-        return
     valid_periods = ["1h", "24h", "7d", "30d", "1y"]
     period = context.args[0].lower() if context.args else "24h"
     if period not in valid_periods:
@@ -763,9 +744,6 @@ async def cmd_bubbles(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(page, parse_mode="Markdown")
 
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await deny(update)
-        return
     await update.message.reply_text("⏳ Se încarcă top 10...")
     coins = get_top_coins(10)
     if not coins:
@@ -784,9 +762,6 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_trending(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await deny(update)
-        return
     await update.message.reply_text("⏳ Se încarcă trending...")
     coins = get_trending_coins()
     if not coins:
@@ -802,9 +777,6 @@ async def cmd_trending(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_analiza(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await deny(update)
-        return
     if not context.args:
         await update.message.reply_text("Folosire: `/analiza BTC`", parse_mode="Markdown")
         return
@@ -861,9 +833,6 @@ async def cmd_analiza(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=True)
 
 async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await deny(update)
-        return
     if len(context.args) < 2:
         await update.message.reply_text("Folosire: `/alert BTC 70000`", parse_mode="Markdown")
         return
@@ -895,9 +864,6 @@ async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown")
 
 async def cmd_myalerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await deny(update)
-        return
     uid    = update.effective_user.id
     alerts = user_alerts.get(uid, [])
     if not alerts:
@@ -911,9 +877,6 @@ async def cmd_myalerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 async def cmd_removealert(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await deny(update)
-        return
     uid    = update.effective_user.id
     alerts = user_alerts.get(uid, [])
     if not alerts:
