@@ -21,6 +21,7 @@ Commands:
 """
 
 import os
+import json
 import asyncio
 import time
 import logging
@@ -43,7 +44,30 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
-user_alerts: dict[int, list[dict]] = {}
+# ─── PERSISTENT ALERTS ────────────────────────────────────────────────────────
+ALERTS_FILE = "alerts.json"
+
+def load_alerts() -> dict[int, list[dict]]:
+    """Încarcă alertele salvate pe disc."""
+    if os.path.exists(ALERTS_FILE):
+        try:
+            with open(ALERTS_FILE, "r") as f:
+                raw = json.load(f)
+            # JSON keys sunt string → convertim la int
+            return {int(k): v for k, v in raw.items()}
+        except Exception as e:
+            logger.error(f"load_alerts error: {e}")
+    return {}
+
+def save_alerts() -> None:
+    """Salvează alertele pe disc."""
+    try:
+        with open(ALERTS_FILE, "w") as f:
+            json.dump(user_alerts, f, indent=2)
+    except Exception as e:
+        logger.error(f"save_alerts error: {e}")
+
+user_alerts: dict[int, list[dict]] = load_alerts()
 
 
 
@@ -889,6 +913,7 @@ async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "slug": slug, "symbol": data["symbol"],
         "name": data["name"], "target": target, "direction": direction,
     })
+    save_alerts()
     arrow = "📈 crește până la" if direction == "above" else "📉 scade până la"
     await update.message.reply_text(
         f"✅ Alertă setată: *{data['name']}* {arrow} {fmt_price(target)}\n"
@@ -1122,6 +1147,8 @@ async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
                 to_remove.append(i)
         for i in reversed(to_remove):
             alerts.pop(i)
+        if to_remove:
+            save_alerts()
 
 # ─── MAIN ──────────────────────────────────────────────────────────────────────
 
