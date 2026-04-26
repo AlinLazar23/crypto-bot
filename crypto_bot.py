@@ -21,6 +21,7 @@ Commands:
 """
 
 import os
+import asyncio
 import time
 import logging
 import requests
@@ -357,6 +358,9 @@ def format_bubbles(coins: list[dict], period: str) -> list[str]:
 
 def get_fear_greed() -> dict | None:
     """Fear & Greed Index de pe alternative.me — gratuit, fără API key."""
+    cached = cache_get("fear_greed")
+    if cached is not None:
+        return cached
     try:
         r = requests.get(
             "https://api.alternative.me/fng/?limit=8",
@@ -369,31 +373,38 @@ def get_fear_greed() -> dict | None:
             today     = data[0]
             yesterday = data[1] if len(data) > 1 else data[0]
             week_vals = [int(d["value"]) for d in data]
-            return {
+            result = {
                 "value":      int(today["value"]),
                 "label":      today["value_classification"],
                 "yesterday":  int(yesterday["value"]),
                 "week_avg":   round(sum(week_vals) / len(week_vals), 1),
                 "history":    week_vals,
             }
+            cache_set("fear_greed", result)
+            return result
     except Exception as e:
         logger.error(f"get_fear_greed error: {e}")
     return None
 
 def get_global_market() -> dict | None:
     """Date globale piata direct de pe CoinGecko — fara ajustari."""
+    cached = cache_get("global_market")
+    if cached is not None:
+        return cached
     try:
         r = requests.get(f"{COINGECKO_BASE}/global", timeout=10)
         if r.status_code != 200:
             return None
         d = r.json().get("data", {})
-        return {
+        result = {
             "total_market_cap":      d.get("total_market_cap", {}).get("usd", 0),
             "total_volume_24h":      d.get("total_volume", {}).get("usd", 0),
             "btc_dominance":         round(d.get("market_cap_percentage", {}).get("btc", 0), 2),
             "eth_dominance":         round(d.get("market_cap_percentage", {}).get("eth", 0), 2),
             "market_cap_change_24h": d.get("market_cap_change_percentage_24h_usd", 0),
         }
+        cache_set("global_market", result)
+        return result
     except Exception as e:
         logger.error(f"get_global_market error: {e}")
     return None
@@ -401,21 +412,33 @@ def get_global_market() -> dict | None:
 
 def get_btc_eth_prices() -> dict:
     """Prețuri BTC și ETH de pe CoinGecko."""
+    cached = cache_get("btc_eth_prices")
+    if cached is not None:
+        return cached
     try:
         r = requests.get(
-            f"{COINGECKO_BASE}/simple/price",
-            params={"ids": "bitcoin,ethereum", "vs_currencies": "usd",
-                    "include_24hr_change": "true"},
+            f"{COINGECKO_BASE}/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "ids": "bitcoin,ethereum",
+                "order": "market_cap_desc",
+                "per_page": 2,
+                "page": 1,
+                "sparkline": "false",
+            },
             timeout=10,
         )
         if r.status_code == 200:
-            d = r.json()
-            return {
-                "btc_price":  d.get("bitcoin", {}).get("usd", 0),
-                "btc_change": d.get("bitcoin", {}).get("usd_24h_change", 0),
-                "eth_price":  d.get("ethereum", {}).get("usd", 0),
-                "eth_change": d.get("ethereum", {}).get("usd_24h_change", 0),
-            }
+            result = {}
+            for c in r.json():
+                if c["id"] == "bitcoin":
+                    result["btc_price"]  = c.get("current_price", 0)
+                    result["btc_change"] = c.get("price_change_percentage_24h") or 0
+                elif c["id"] == "ethereum":
+                    result["eth_price"]  = c.get("current_price", 0)
+                    result["eth_change"] = c.get("price_change_percentage_24h") or 0
+            cache_set("btc_eth_prices", result)
+            return result
     except Exception as e:
         logger.error(f"get_btc_eth_prices error: {e}")
     return {}
@@ -615,12 +638,21 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = await update.message.reply_text("⏳ Se calculează statisticile pieței...")
 
-    fg          = get_fear_greed()
-    global_data = get_global_market()
-    prices      = get_btc_eth_prices()
+    # Retry de max 3 ori în caz de rate limiting
+    fg = global_data = prices = None
+    for attempt in range(3):
+        if attempt > 0:
+            await asyncio.sleep(2)
+        fg          = get_fear_greed()
+        time.sleep(0.5)
+        global_data = get_global_market()
+        time.sleep(0.5)
+        prices      = get_btc_eth_prices()
+        if fg and global_data and prices:
+            break
 
     if not fg or not global_data or not prices:
-        await msg.edit_text("❌ Nu s-au putut obține datele. Încearcă din nou.")
+        await msg.edit_text("❌ Nu s-au putut obține datele. Încearcă din nou în 1 minut.")
         return
 
     text = format_stats(fg, global_data, prices)
@@ -952,11 +984,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(page, parse_mode="Markdown")
 
     elif data == "stats":
-        fg          = get_fear_greed()
-        global_data = get_global_market()
-        prices      = get_btc_eth_prices()
+        fg = global_data = prices = None
+        for attempt in range(3):
+            if attempt > 0:
+                await asyncio.sleep(2)
+            fg          = get_fear_greed()
+            time.sleep(0.5)
+            global_data = get_global_market()
+            time.sleep(0.5)
+            prices      = get_btc_eth_prices()
+            if fg and global_data and prices:
+                break
         if not fg or not global_data or not prices:
-            await query.edit_message_text("❌ Nu s-au putut obține datele.")
+            await query.edit_message_text("❌ Nu s-au putut obține datele. Încearcă în 1 minut.")
             return
         text = format_stats(fg, global_data, prices)
         keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
