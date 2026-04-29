@@ -20,13 +20,12 @@ Commands:
     /help            - Ajutor
 """
 
-from datetime import datetime
-import datetime
 import os
 import json
 import asyncio
 import time
 import datetime
+import pytz
 import logging
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -108,7 +107,6 @@ BUBBLES_COINS = [
     ("internet-computer",     "ICP"),
     ("polkadot",              "DOT"),
     ("astar",                 "ASTR"),
-    ("aster-2",               "ASTER"),
     ("cosmos",                "ATOM"),
     ("algorand",              "ALGO"),
     ("arbitrum",              "ARB"),
@@ -1235,12 +1233,11 @@ def main():
     app.add_handler(CallbackQueryHandler(button_callback))
 
     app.job_queue.run_repeating(check_alerts, interval=CHECK_ALERTS_INTERVAL, first=10)
- import pytz
-ro_tz = pytz.timezone("Europe/Bucharest")
-app.job_queue.run_daily(auto_stats_job, time=datetime.time(12, 0, tzinfo=ro_tz))
-app.job_queue.run_daily(auto_stats_job, time=datetime.time(0, 0, tzinfo=ro_tz))
-app.job_queue.run_daily(auto_trending_job, time=datetime.time(12, 5, tzinfo=ro_tz))
-app.job_queue.run_daily(auto_trending_job, time=datetime.time(0, 5, tzinfo=ro_tz))
+    ro_tz = pytz.timezone("Europe/Bucharest")
+    app.job_queue.run_daily(auto_stats_job,    time=datetime.time(12, 0, tzinfo=ro_tz))
+    app.job_queue.run_daily(auto_stats_job,    time=datetime.time(0,  0, tzinfo=ro_tz))
+    app.job_queue.run_daily(auto_trending_job, time=datetime.time(12, 5, tzinfo=ro_tz))
+    app.job_queue.run_daily(auto_trending_job, time=datetime.time(0,  5, tzinfo=ro_tz))
 
     print("🤖 CryptoBot rulează... Apasă Ctrl+C pentru a opri.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
