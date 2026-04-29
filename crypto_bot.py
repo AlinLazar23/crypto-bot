@@ -107,6 +107,7 @@ BUBBLES_COINS = [
     ("internet-computer",     "ICP"),
     ("polkadot",              "DOT"),
     ("astar",                 "ASTR"),
+    ("aster-2",               "ASTER"),
     ("cosmos",                "ATOM"),
     ("algorand",              "ALGO"),
     ("arbitrum",              "ARB"),
