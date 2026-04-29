@@ -38,6 +38,8 @@ from telegram.ext import (
 BOT_TOKEN      = os.environ.get("BOT_TOKEN", "")  # ← Pune token-ul în Railway Variables, nu aici!
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 CHECK_ALERTS_INTERVAL = 60
+GROUP_CHAT_ID         = -1003982541636  # Grupul tău Telegram
+AUTO_STATS_INTERVAL   = 43200  # 12 ore în secunde
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -1159,6 +1161,55 @@ async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
         if to_remove:
             save_alerts()
 
+
+# ─── AUTO JOBS (stats + trending la fiecare 12h) ──────────────────────────────
+
+async def auto_stats_job(context: ContextTypes.DEFAULT_TYPE):
+    """Trimite /stats automat în grup la fiecare 12h."""
+    try:
+        fg          = get_fear_greed()
+        time.sleep(0.5)
+        global_data = get_global_market()
+        time.sleep(0.5)
+        prices      = get_btc_eth_prices()
+        if not fg or not global_data or not prices:
+            logger.error("auto_stats_job: nu s-au putut obtine datele")
+            return
+        text     = format_stats(fg, global_data, prices)
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
+        await context.bot.send_message(
+            chat_id=GROUP_CHAT_ID,
+            text=text,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        logger.info("auto_stats_job: trimis cu succes")
+    except Exception as e:
+        logger.error(f"auto_stats_job error: {e}")
+
+async def auto_trending_job(context: ContextTypes.DEFAULT_TYPE):
+    """Trimite /trending automat în grup la fiecare 12h."""
+    try:
+        coins = get_trending_coins()
+        if not coins:
+            logger.error("auto_trending_job: nu s-au putut obtine datele")
+            return
+        lines = ["*\U0001f525 Trending pe CoinGecko*\n"]
+        for item in coins[:7]:
+            c    = item["item"]
+            rank = c.get("market_cap_rank", "?")
+            lines.append(f"• *{c['name']}* ({c['symbol']})  •  Rank #{rank}")
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
+        await context.bot.send_message(
+            chat_id=GROUP_CHAT_ID,
+            text="\n".join(lines),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        logger.info("auto_trending_job: trimis cu succes")
+    except Exception as e:
+        logger.error(f"auto_trending_job error: {e}")
+
 # ─── MAIN ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -1180,6 +1231,8 @@ def main():
     app.add_handler(CallbackQueryHandler(button_callback))
 
     app.job_queue.run_repeating(check_alerts, interval=CHECK_ALERTS_INTERVAL, first=10)
+    app.job_queue.run_repeating(auto_stats_job, interval=AUTO_STATS_INTERVAL, first=60)
+    app.job_queue.run_repeating(auto_trending_job, interval=AUTO_STATS_INTERVAL, first=120)
 
     print("🤖 CryptoBot rulează... Apasă Ctrl+C pentru a opri.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
