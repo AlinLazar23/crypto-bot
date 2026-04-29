@@ -353,13 +353,17 @@ def format_bubbles(coins: list[dict], period: str) -> list[str]:
     lines = []
     for c in sorted_coins:
         chg   = c.get(period_key, 0)
-        emoji = "🟢" if chg >= 0 else "🔴"
-        sign  = "+" if chg >= 0 else ""
-        line  = (
-            f"{emoji} *{c['symbol']}* `#{c['rank']}`  "
-            f"`{fmt_price(c['price'])}`  "
-            f"`{sign}{chg:.1f}%`\n"
-        )
+        # Pret alb (monospace), procent bold verde/rosu
+        price_str = fmt_price(c['price'])
+        if chg >= 0:
+            chg_str = f"+{chg:.1f}%"
+        else:
+            chg_str = f"{chg:.1f}%"
+        chg_emoji = "🟢" if chg >= 0 else "🔴"
+        rank = c['rank']
+        # Adaug zero in fata pentru rank sub 10 ca sa nu fie interpretat ca hashtag simplu
+        rank_str = f"0{rank}" if isinstance(rank, int) and rank < 10 else str(rank)
+        line = f"{chg_emoji} {c['symbol']} #{rank_str}  {price_str}  {chg_str}\n"
         lines.append(line)
 
     # Împarte în pagini
@@ -685,6 +689,11 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text, parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
+async def cmd_chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    user_id = str(update.effective_user.id)
+    await update.message.reply_text("Chat ID: " + chat_id + "\nUser ID: " + user_id)
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -1155,6 +1164,8 @@ async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
+    app.add_handler(CommandHandler("chatid",      cmd_chatid))
+    app.add_handler(CommandHandler("chatid",      cmd_chatid))
     app.add_handler(CommandHandler("start",       cmd_start))
     app.add_handler(CommandHandler("help",        cmd_help))
     app.add_handler(CommandHandler("price",       cmd_price))
