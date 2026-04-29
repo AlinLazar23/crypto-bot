@@ -20,6 +20,8 @@ Commands:
     /help            - Ajutor
 """
 
+from datetime import datetime
+import datetime
 import os
 import json
 import asyncio
@@ -1232,8 +1234,12 @@ def main():
     app.add_handler(CallbackQueryHandler(button_callback))
 
     app.job_queue.run_repeating(check_alerts, interval=CHECK_ALERTS_INTERVAL, first=10)
-    app.job_queue.run_repeating(auto_stats_job, interval=AUTO_STATS_INTERVAL, first=60)
-    app.job_queue.run_repeating(auto_trending_job, interval=AUTO_STATS_INTERVAL, first=120)
+ import pytz
+ro_tz = pytz.timezone("Europe/Bucharest")
+app.job_queue.run_daily(auto_stats_job, time=datetime.time(12, 0, tzinfo=ro_tz))
+app.job_queue.run_daily(auto_stats_job, time=datetime.time(0, 0, tzinfo=ro_tz))
+app.job_queue.run_daily(auto_trending_job, time=datetime.time(12, 5, tzinfo=ro_tz))
+app.job_queue.run_daily(auto_trending_job, time=datetime.time(0, 5, tzinfo=ro_tz))
 
     print("🤖 CryptoBot rulează... Apasă Ctrl+C pentru a opri.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
