@@ -5,7 +5,7 @@ Surse: CoinGecko (toate datele) + TradingView (analiză)
 Fără API key necesar! Funcționează în orice regiune.
 
 Requirements:
-    pip install python-telegram-bot[job-queue] requests tradingview-ta
+    pip install python-telegram-bot[job-queue] requests
 
 Commands:
     /start           - Bun venit
@@ -13,7 +13,6 @@ Commands:
     /top             - Top 10 după market cap
     /trending        - Trending CoinGecko
     /bubbles         - Lista CryptoBubbles (1h/24h/7d/30d/1y)
-    /analiza BTC     - Analiză tehnică TradingView
     /alert BTC 70000 - Alertă de preț
     /myalerts        - Alertele tale
     /removealert 1   - Șterge alertă
@@ -37,7 +36,7 @@ from telegram.ext import (
 )
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
-BOT_TOKEN      = os.environ.get("BOT_TOKEN", "")  # ← Pune token-ul în Railway Variables, nu aici!
+BOT_TOKEN      = os.environ.get("BOT_TOKEN", "8403967516:AAE2MGRsx0d_vDfDL_Janh9167DVptkOopY")  # ← Pune token-ul în Railway Variables, nu aici!
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 CHECK_ALERTS_INTERVAL = 60
 GROUP_CHAT_ID         = -1003982541636  # Grupul tău Telegram
@@ -257,10 +256,20 @@ def get_top_coins(limit: int = 10) -> list[dict]:
     return []
 
 def get_trending_coins() -> list[dict]:
+    """Trending de pe CoinGecko cu procente 24h."""
     try:
         r = requests.get(f"{COINGECKO_BASE}/search/trending", timeout=10)
-        if r.status_code == 200:
-            return r.json().get("coins", [])
+        if r.status_code != 200:
+            return []
+        coins = r.json().get("coins", [])
+        for coin in coins:
+            item = coin["item"]
+            try:
+                chg = item["data"]["price_change_percentage_24h"]["usd"]
+                item["change_24h"] = round(chg, 2)
+            except Exception:
+                item["change_24h"] = 0
+        return coins
     except Exception as e:
         logger.error(f"get_trending_coins error: {e}")
     return []
@@ -278,111 +287,49 @@ def get_bubbles_data(period: str = "24h") -> list[dict]:
 
     slugs = [slug for slug, _ in BUBBLES_COINS]
 
-    try:
-        r = requests.get(
-            f"{COINGECKO_BASE}/coins/markets",
-            params={
-                "vs_currency": "usd",
-                "ids": ",".join(slugs),
-                "order": "market_cap_desc",
-                "per_page": 100,
-                "page": 1,
-                "sparkline": "false",
-                "price_change_percentage": "1h,24h,7d,30d,1y",
-            },
-            timeout=15,
-        )
-        if r.status_code == 200:
-            result = []
-            for c in r.json():
-                result.append({
-                    "slug":       c["id"],
-                    "symbol":     c["symbol"].upper(),
-                    "name":       c["name"],
-                    "rank":       c.get("market_cap_rank", 999),
-                    "price":      c.get("current_price", 0),
-                    "change_1h":  c.get("price_change_percentage_1h_in_currency") or 0,
-                    "change_24h": c.get("price_change_percentage_24h") or 0,
-                    "change_7d":  c.get("price_change_percentage_7d_in_currency") or 0,
-                    "change_30d": c.get("price_change_percentage_30d_in_currency") or 0,
-                    "change_1y":  c.get("price_change_percentage_1y_in_currency") or 0,
-                    "market_cap": c.get("market_cap", 0),
-                    "volume_24h": c.get("total_volume", 0),
-                })
-            cache_set(cache_key, result)
-            return result
-    except Exception as e:
-        logger.error(f"get_bubbles_data error: {e}")
+    for attempt in range(3):
+        if attempt > 0:
+            time.sleep(3)
+        try:
+            r = requests.get(
+                f"{COINGECKO_BASE}/coins/markets",
+                params={
+                    "vs_currency": "usd",
+                    "ids": ",".join(slugs),
+                    "order": "market_cap_desc",
+                    "per_page": 100,
+                    "page": 1,
+                    "sparkline": "false",
+                    "price_change_percentage": "1h,24h,7d,30d,1y",
+                },
+                timeout=20,
+            )
+            if r.status_code == 429:
+                logger.warning(f"Rate limited, attempt {attempt+1}/3")
+                continue
+            if r.status_code == 200:
+                result = []
+                for c in r.json():
+                    result.append({
+                        "slug":       c["id"],
+                        "symbol":     c["symbol"].upper(),
+                        "name":       c["name"],
+                        "rank":       c.get("market_cap_rank", 999),
+                        "price":      c.get("current_price", 0),
+                        "change_1h":  c.get("price_change_percentage_1h_in_currency") or 0,
+                        "change_24h": c.get("price_change_percentage_24h") or 0,
+                        "change_7d":  c.get("price_change_percentage_7d_in_currency") or 0,
+                        "change_30d": c.get("price_change_percentage_30d_in_currency") or 0,
+                        "change_1y":  c.get("price_change_percentage_1y_in_currency") or 0,
+                        "market_cap": c.get("market_cap", 0),
+                        "volume_24h": c.get("total_volume", 0),
+                    })
+                cache_set(cache_key, result)
+                return result
+        except Exception as e:
+            logger.error(f"get_bubbles_data error (attempt {attempt+1}): {e}")
+            continue
     return []
-
-# ─── TRADINGVIEW ───────────────────────────────────────────────────────────────
-
-def get_tv_analysis(symbol: str) -> object | None:
-    try:
-        from tradingview_ta import TA_Handler, Interval
-        handler = TA_Handler(
-            symbol=f"{symbol}USDT",
-            screener="crypto",
-            exchange="BINANCE",
-            interval=Interval.INTERVAL_1_DAY,
-        )
-        return handler.get_analysis()
-    except Exception as e:
-        logger.error(f"TradingView error: {e}")
-    return None
-
-# ─── FORMAT BUBBLES ────────────────────────────────────────────────────────────
-
-def format_bubbles(coins: list[dict], period: str) -> list[str]:
-    """
-    Împarte lista în mesaje de max ~4000 caractere (limita Telegram).
-    Returnează o listă de string-uri (pagini).
-    """
-    period_key = {
-        "1h": "change_1h", "24h": "change_24h",
-        "7d": "change_7d", "30d": "change_30d", "1y": "change_1y",
-    }.get(period, "change_24h")
-
-    # Sortează după schimbare descrescătoare
-    sorted_coins = sorted(coins, key=lambda c: c.get(period_key, 0), reverse=True)
-
-    period_label = {"1h": "1 Oră", "24h": "24 Ore", "7d": "7 Zile",
-                    "30d": "30 Zile", "1y": "1 An"}.get(period, period)
-
-    header = (
-        f"🫧 *CryptoBubbles — {period_label}*\n"
-        f"_{len(coins)} monede sortate după performanță_\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    )
-
-    lines = []
-    for c in sorted_coins:
-        chg   = c.get(period_key, 0)
-        # Pret alb (monospace), procent bold verde/rosu
-        price_str = fmt_price(c['price'])
-        if chg >= 0:
-            chg_str = f"+{chg:.1f}%"
-        else:
-            chg_str = f"{chg:.1f}%"
-        chg_emoji = "🟢" if chg >= 0 else "🔴"
-        rank = c['rank']
-        # Adaug zero in fata pentru rank sub 10 ca sa nu fie interpretat ca hashtag simplu
-        rank_str = f"0{rank}" if isinstance(rank, int) and rank < 10 else str(rank)
-        line = f"{chg_emoji} {c['symbol']} #{rank_str}  {price_str}  {chg_str}\n"
-        lines.append(line)
-
-    # Împarte în pagini
-    pages = []
-    current = header
-    for line in lines:
-        if len(current) + len(line) > 3800:
-            pages.append(current)
-            current = f"🫧 *CryptoBubbles — {period_label}* _(continuare)_\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        current += line
-    if current.strip():
-        pages.append(current)
-
-    return pages
 
 # ─── COMMAND HANDLERS ──────────────────────────────────────────────────────────
 
@@ -704,8 +651,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📊 Top 10",      callback_data="top"),
          InlineKeyboardButton("🔥 Trending",    callback_data="trending")],
-        [InlineKeyboardButton("🫧 Bubbles 24h", callback_data="bubbles:24h"),
-         InlineKeyboardButton("📈 Analiză BTC", callback_data="analiza:BTC")],
+        [InlineKeyboardButton("🫧 Bubbles 24h", callback_data="bubbles:24h")],
         [InlineKeyboardButton("📊 Stats",        callback_data="stats"),
          InlineKeyboardButton("❓ Help",          callback_data="help")],
     ]
@@ -717,7 +663,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /bubbles 24h\n"
         "• /bubbles 7d\n"
         "• /top\n"
-        "• /analiza ETH\n"
         "• /alert BTC 70000\n",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard),
@@ -735,7 +680,6 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/bubbles `1y` — Performanță 1 an\n\n"
         "/top — Top 10 după market cap\n\n"
         "/trending — Trending pe CoinGecko\n\n"
-        "/analiza `<coin>` — Analiză TradingView\n\n"
         "/stats — Statistici piață + Market Score\n\n"
         "/alert `<coin> <preț>` — Alertă de preț\n\n"
         "/myalerts — Alertele tale active\n\n"
@@ -775,6 +719,59 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"price:{slug}")]]
     await update.message.reply_text(text, parse_mode="Markdown",
                                     reply_markup=InlineKeyboardMarkup(keyboard))
+
+# ─── FORMAT BUBBLES ────────────────────────────────────────────────────────────
+
+def format_bubbles(coins: list[dict], period: str) -> list[str]:
+    """
+    Împarte lista în mesaje de max ~4000 caractere (limita Telegram).
+    Returnează o listă de string-uri (pagini).
+    """
+    period_key = {
+        "1h": "change_1h", "24h": "change_24h",
+        "7d": "change_7d", "30d": "change_30d", "1y": "change_1y",
+    }.get(period, "change_24h")
+
+    # Sortează după schimbare descrescătoare
+    sorted_coins = sorted(coins, key=lambda c: c.get(period_key, 0), reverse=True)
+
+    period_label = {"1h": "1 Oră", "24h": "24 Ore", "7d": "7 Zile",
+                    "30d": "30 Zile", "1y": "1 An"}.get(period, period)
+
+    header = (
+        f"🫧 *CryptoBubbles — {period_label}*\n"
+        f"_{len(coins)} monede sortate după performanță_\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    )
+
+    lines = []
+    for c in sorted_coins:
+        chg   = c.get(period_key, 0)
+        # Pret alb (monospace), procent bold verde/rosu
+        price_str = fmt_price(c['price'])
+        if chg >= 0:
+            chg_str = f"+{chg:.1f}%"
+        else:
+            chg_str = f"{chg:.1f}%"
+        chg_emoji = "🟢" if chg >= 0 else "🔴"
+        rank = c['rank']
+        # Adaug zero in fata pentru rank sub 10 ca sa nu fie interpretat ca hashtag simplu
+        rank_str = f"0{rank}" if isinstance(rank, int) and rank < 10 else str(rank)
+        line = f"{chg_emoji} {c['symbol']} #{rank_str}  {price_str}  {chg_str}\n"
+        lines.append(line)
+
+    # Împarte în pagini
+    pages = []
+    current = header
+    for line in lines:
+        if len(current) + len(line) > 3800:
+            pages.append(current)
+            current = f"🫧 *CryptoBubbles — {period_label}* _(continuare)_\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        current += line
+    if current.strip():
+        pages.append(current)
+
+    return pages
 
 async def cmd_bubbles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     valid_periods = ["1h", "24h", "7d", "30d", "1y"]
@@ -841,66 +838,13 @@ async def cmd_trending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for item in coins[:7]:
         c    = item["item"]
         rank = c.get("market_cap_rank", "?")
-        lines.append(f"• *{c['name']}* ({c['symbol']})  •  Rank #{rank}")
+        chg  = c.get("change_24h", 0)
+        chg_emoji = "🟢" if chg >= 0 else "🔴"
+        sign = "+" if chg >= 0 else ""
+        lines.append(f"• {c['name']} ({c['symbol']})  Rank #{rank}  {chg_emoji} {sign}{chg:.1f}%")
     keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown",
                                     reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def cmd_analiza(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Folosire: `/analiza BTC`", parse_mode="Markdown")
-        return
-    query     = " ".join(context.args)
-    slug      = resolve_slug(query)
-    coin_info = get_coin_data(slug)
-    symbol    = coin_info["symbol"] if coin_info else query.upper()
-
-    await update.message.reply_text(f"⏳ Se analizează *{symbol}*...", parse_mode="Markdown")
-    analysis = get_tv_analysis(symbol)
-    if not analysis:
-        await update.message.reply_text(
-            f"❌ Nu s-a putut obține analiza pentru *{symbol}*.",
-            parse_mode="Markdown")
-        return
-
-    s   = analysis.summary
-    ind = analysis.indicators
-    ma  = analysis.moving_averages
-    rec = s.get("RECOMMENDATION", "N/A")
-    emoji_map = {"STRONG_BUY": "🟢🟢", "BUY": "🟢", "NEUTRAL": "🟡",
-                 "SELL": "🔴", "STRONG_SELL": "🔴🔴"}
-    rec_emoji  = emoji_map.get(rec, "⚪")
-    rsi    = ind.get("RSI") or 0
-    macd   = ind.get("MACD.macd") or 0
-    macd_s = ind.get("MACD.signal") or 0
-    ema20  = ind.get("EMA20") or 0
-    ema50  = ind.get("EMA50") or 0
-    ema200 = ind.get("EMA200") or 0
-    close  = ind.get("close") or 0
-    rsi_txt  = "Supracumpărat ⚠️" if rsi >= 70 else ("Supravândut ⚠️" if rsi <= 30 else "Normal ✅")
-    macd_txt = "🟢 Bullish" if macd > macd_s else "🔴 Bearish"
-    buy_s = s.get("BUY", 0); neu_s = s.get("NEUTRAL", 0); sell_s = s.get("SELL", 0)
-    buy_ma = ma.get("BUY", 0); neu_ma = ma.get("NEUTRAL", 0); sell_ma = ma.get("SELL", 0)
-    tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{symbol}USDT"
-    text = (
-        f"📊 *Analiză Tehnică — {symbol}/USDT*\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"{rec_emoji} *Semnal: {rec.replace('_', ' ')}*\n\n"
-        f"*📈 Oscilatori* (🟢`{buy_s}` 🟡`{neu_s}` 🔴`{sell_s}`)\n"
-        f"• RSI (14): `{rsi:.1f}` — {rsi_txt}\n"
-        f"• MACD: {macd_txt}\n\n"
-        f"*📉 Medii Mobile* (🟢`{buy_ma}` 🟡`{neu_ma}` 🔴`{sell_ma}`)\n"
-        f"• EMA 20:  `{fmt_price(ema20)}`\n"
-        f"• EMA 50:  `{fmt_price(ema50)}`\n"
-        f"• EMA 200: `{fmt_price(ema200)}`\n"
-        f"• Preț:    `{fmt_price(close)}`\n\n"
-        f"[📈 Vezi graficul pe TradingView]({tv_link})"
-    )
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"analiza:{symbol}")]]
-    await update.message.reply_text(
-        text, parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        disable_web_page_preview=True)
 
 async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
@@ -1050,7 +994,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/bubbles `<perioadă>` — CryptoBubbles\n"
             "/top — Top 10 monede\n"
             "/trending — Trending CoinGecko\n"
-            "/analiza `<coin>` — Analiză TradingView\n"
             "/alert `<coin> <preț>` — Alertă de preț\n"
             "/myalerts — Alertele tale\n"
             "/removealert `<număr>` — Șterge alertă\n"
@@ -1081,52 +1024,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data.startswith("analiza:"):
-        symbol   = data.split(":", 1)[1]
-        analysis = get_tv_analysis(symbol)
-        if not analysis:
-            await query.edit_message_text(
-                f"❌ Nu s-a putut obține analiza pentru *{symbol}*.",
-                parse_mode="Markdown")
-            return
-        s   = analysis.summary
-        ind = analysis.indicators
-        ma  = analysis.moving_averages
-        rec = s.get("RECOMMENDATION", "N/A")
-        emoji_map = {"STRONG_BUY": "🟢🟢", "BUY": "🟢", "NEUTRAL": "🟡",
-                     "SELL": "🔴", "STRONG_SELL": "🔴🔴"}
-        rec_emoji  = emoji_map.get(rec, "⚪")
-        rsi    = ind.get("RSI") or 0
-        macd   = ind.get("MACD.macd") or 0
-        macd_s = ind.get("MACD.signal") or 0
-        ema20  = ind.get("EMA20") or 0
-        ema50  = ind.get("EMA50") or 0
-        ema200 = ind.get("EMA200") or 0
-        close  = ind.get("close") or 0
-        rsi_txt  = "Supracumpărat ⚠️" if rsi >= 70 else ("Supravândut ⚠️" if rsi <= 30 else "Normal ✅")
-        macd_txt = "🟢 Bullish" if macd > macd_s else "🔴 Bearish"
-        buy_s = s.get("BUY", 0); neu_s = s.get("NEUTRAL", 0); sell_s = s.get("SELL", 0)
-        buy_ma = ma.get("BUY", 0); neu_ma = ma.get("NEUTRAL", 0); sell_ma = ma.get("SELL", 0)
-        tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{symbol}USDT"
-        text = (
-            f"📊 *Analiză Tehnică — {symbol}/USDT*\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"{rec_emoji} *Semnal: {rec.replace('_', ' ')}*\n\n"
-            f"*📈 Oscilatori* (🟢`{buy_s}` 🟡`{neu_s}` 🔴`{sell_s}`)\n"
-            f"• RSI (14): `{rsi:.1f}` — {rsi_txt}\n"
-            f"• MACD: {macd_txt}\n\n"
-            f"*📉 Medii Mobile* (🟢`{buy_ma}` 🟡`{neu_ma}` 🔴`{sell_ma}`)\n"
-            f"• EMA 20:  `{fmt_price(ema20)}`\n"
-            f"• EMA 50:  `{fmt_price(ema50)}`\n"
-            f"• EMA 200: `{fmt_price(ema200)}`\n"
-            f"• Preț:    `{fmt_price(close)}`\n\n"
-            f"[📈 Vezi graficul pe TradingView]({tv_link})"
-        )
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"analiza:{symbol}")]]
-        await query.edit_message_text(
-            text, parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            disable_web_page_preview=True)
+
 
 # ─── BACKGROUND JOB: CHECK ALERTS ─────────────────────────────────────────────
 
@@ -1227,7 +1125,6 @@ def main():
     app.add_handler(CommandHandler("top",         cmd_top))
     app.add_handler(CommandHandler("trending",    cmd_trending))
     app.add_handler(CommandHandler("stats",       cmd_stats))
-    app.add_handler(CommandHandler("analiza",     cmd_analiza))
     app.add_handler(CommandHandler("alert",       cmd_alert))
     app.add_handler(CommandHandler("myalerts",    cmd_myalerts))
     app.add_handler(CommandHandler("removealert", cmd_removealert))
