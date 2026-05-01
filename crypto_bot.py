@@ -36,7 +36,7 @@ from telegram.ext import (
 )
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
-BOT_TOKEN      = os.environ.get("BOT_TOKEN", "")  # ← Pune token-ul în Railway Variables, nu aici!
+BOT_TOKEN      = os.environ.get("BOT_TOKEN", "8403967516:AAE2MGRsx0d_vDfDL_Janh9167DVptkOopY")  # ← Pune token-ul în Railway Variables, nu aici!
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 CHECK_ALERTS_INTERVAL = 60
 GROUP_CHAT_ID         = -1003982541636  # Grupul tău Telegram
@@ -76,7 +76,7 @@ user_alerts: dict[int, list[dict]] = load_alerts()
 
 # ─── CACHE (evită rate limiting CoinGecko) ─────────────────────────────────────
 _cache: dict[str, tuple[any, float]] = {}  # key → (data, timestamp)
-CACHE_TTL = 120  # secunde (2 minute)
+CACHE_TTL = 300  # secunde (5 minute)
 
 def cache_get(key: str):
     if key in _cache:
@@ -289,7 +289,7 @@ def get_bubbles_data(period: str = "24h") -> list[dict]:
 
     for attempt in range(3):
         if attempt > 0:
-            time.sleep(3)
+            time.sleep(10)
         try:
             r = requests.get(
                 f"{COINGECKO_BASE}/coins/markets",
@@ -302,10 +302,12 @@ def get_bubbles_data(period: str = "24h") -> list[dict]:
                     "sparkline": "false",
                     "price_change_percentage": "1h,24h,7d,30d,1y",
                 },
-                timeout=20,
+                timeout=30,
+                headers={"Accept": "application/json"},
             )
             if r.status_code == 429:
-                logger.warning(f"Rate limited, attempt {attempt+1}/3")
+                logger.warning(f"Rate limited, attempt {attempt+1}/3, waiting 15s")
+                time.sleep(15)
                 continue
             if r.status_code == 200:
                 result = []
@@ -319,8 +321,8 @@ def get_bubbles_data(period: str = "24h") -> list[dict]:
                         "change_1h":  c.get("price_change_percentage_1h_in_currency") or 0,
                         "change_24h": c.get("price_change_percentage_24h") or 0,
                         "change_7d":  c.get("price_change_percentage_7d_in_currency") or 0,
-                        "change_30d": c.get("price_change_percentage_30d_in_currency") or 0,
-                        "change_1y":  c.get("price_change_percentage_1y_in_currency") or 0,
+                        "change_30d": float(c.get("price_change_percentage_30d_in_currency") or 0),
+                        "change_1y":  float(c.get("price_change_percentage_1y_in_currency") or 0),
                         "market_cap": c.get("market_cap", 0),
                         "volume_24h": c.get("total_volume", 0),
                     })
@@ -647,6 +649,51 @@ async def cmd_chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     await update.message.reply_text("Chat ID: " + chat_id + "\nUser ID: " + user_id)
 
+
+def format_bubbles(coins: list[dict], period: str) -> list[str]:
+    """Împarte lista în pagini de max 4000 caractere."""
+    period_key = {
+        "1h": "change_1h", "24h": "change_24h",
+        "7d": "change_7d", "30d": "change_30d", "1y": "change_1y",
+    }.get(period, "change_24h")
+
+    sorted_coins = sorted(coins, key=lambda c: float(c.get(period_key) or 0), reverse=True)
+
+    period_label = {
+        "1h": "1 Oră", "24h": "24 Ore", "7d": "7 Zile",
+        "30d": "30 Zile", "1y": "1 An"
+    }.get(period, period)
+
+    header = (
+        "\U0001f9ef *CryptoBubbles \u2014 " + period_label + "*\n"
+        + "_" + str(len(coins)) + " monede sortate dup\u0103 performan\u021b\u0103_\n"
+        + "\u2501" * 20 + "\n\n"
+    )
+
+    lines = []
+    for c in sorted_coins:
+        chg      = c.get(period_key, 0)
+        chg_emoji = "\U0001f7e2" if chg >= 0 else "\U0001f534"
+        sign     = "+" if chg >= 0 else ""
+        rank     = c["rank"]
+        rank_str = f"0{rank}" if isinstance(rank, int) and rank < 10 else str(rank)
+        price_str = fmt_price(c["price"])
+        chg_str  = f"{sign}{chg:.1f}%"
+        line = f"{c['symbol']} #{rank_str}  {price_str}  {chg_emoji} {chg_str}\n"
+        lines.append(line)
+
+    pages = []
+    current = header
+    for line in lines:
+        if len(current) + len(line) > 3800:
+            pages.append(current)
+            current = f"\U0001f9ef *CryptoBubbles \u2014 {period_label}* _(continuare)_\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        current += line
+    if current.strip():
+        pages.append(current)
+
+    return pages
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📊 Top 10",      callback_data="top"),
@@ -719,59 +766,6 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"price:{slug}")]]
     await update.message.reply_text(text, parse_mode="Markdown",
                                     reply_markup=InlineKeyboardMarkup(keyboard))
-
-# ─── FORMAT BUBBLES ────────────────────────────────────────────────────────────
-
-def format_bubbles(coins: list[dict], period: str) -> list[str]:
-    """
-    Împarte lista în mesaje de max ~4000 caractere (limita Telegram).
-    Returnează o listă de string-uri (pagini).
-    """
-    period_key = {
-        "1h": "change_1h", "24h": "change_24h",
-        "7d": "change_7d", "30d": "change_30d", "1y": "change_1y",
-    }.get(period, "change_24h")
-
-    # Sortează după schimbare descrescătoare
-    sorted_coins = sorted(coins, key=lambda c: c.get(period_key, 0), reverse=True)
-
-    period_label = {"1h": "1 Oră", "24h": "24 Ore", "7d": "7 Zile",
-                    "30d": "30 Zile", "1y": "1 An"}.get(period, period)
-
-    header = (
-        f"🫧 *CryptoBubbles — {period_label}*\n"
-        f"_{len(coins)} monede sortate după performanță_\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    )
-
-    lines = []
-    for c in sorted_coins:
-        chg   = c.get(period_key, 0)
-        # Pret alb (monospace), procent bold verde/rosu
-        price_str = fmt_price(c['price'])
-        if chg >= 0:
-            chg_str = f"+{chg:.1f}%"
-        else:
-            chg_str = f"{chg:.1f}%"
-        chg_emoji = "🟢" if chg >= 0 else "🔴"
-        rank = c['rank']
-        # Adaug zero in fata pentru rank sub 10 ca sa nu fie interpretat ca hashtag simplu
-        rank_str = f"0{rank}" if isinstance(rank, int) and rank < 10 else str(rank)
-        line = f"{chg_emoji} {c['symbol']} #{rank_str}  {price_str}  {chg_str}\n"
-        lines.append(line)
-
-    # Împarte în pagini
-    pages = []
-    current = header
-    for line in lines:
-        if len(current) + len(line) > 3800:
-            pages.append(current)
-            current = f"🫧 *CryptoBubbles — {period_label}* _(continuare)_\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        current += line
-    if current.strip():
-        pages.append(current)
-
-    return pages
 
 async def cmd_bubbles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     valid_periods = ["1h", "24h", "7d", "30d", "1y"]
@@ -1097,9 +1091,12 @@ async def auto_trending_job(context: ContextTypes.DEFAULT_TYPE):
             return
         lines = ["*\U0001f525 Trending pe CoinGecko*\n"]
         for item in coins[:7]:
-            c    = item["item"]
-            rank = c.get("market_cap_rank", "?")
-            lines.append(f"• *{c['name']}* ({c['symbol']})  •  Rank #{rank}")
+            c         = item["item"]
+            rank      = c.get("market_cap_rank", "?")
+            chg       = c.get("change_24h", 0)
+            chg_emoji = "\U0001f7e2" if chg >= 0 else "\U0001f534"
+            sign      = "+" if chg >= 0 else ""
+            lines.append(f"• {c['name']} ({c['symbol']})  Rank #{rank}  {chg_emoji} {sign}{chg:.1f}%")
         keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
         await context.bot.send_message(
             chat_id=GROUP_CHAT_ID,
@@ -1111,13 +1108,69 @@ async def auto_trending_job(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"auto_trending_job error: {e}")
 
+
+async def cmd_test_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Testează mesajele automate (stats + trending) direct în chat-ul curent."""
+    chat_id = update.effective_chat.id
+    await update.message.reply_text("⏳ Se trimit mesajele automate de test...")
+
+    # Stats
+    try:
+        fg = global_data = prices = None
+        for attempt in range(3):
+            if attempt > 0:
+                await asyncio.sleep(2)
+            fg          = get_fear_greed()
+            time.sleep(0.5)
+            global_data = get_global_market()
+            time.sleep(0.5)
+            prices      = get_btc_eth_prices()
+            if fg and global_data and prices:
+                break
+        if fg and global_data and prices:
+            text = format_stats(fg, global_data, prices)
+            keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
+            await context.bot.send_message(
+                chat_id=chat_id, text=text,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Eroare stats: {e}")
+
+    # Trending
+    try:
+        coins = get_trending_coins()
+        if coins:
+            lines = ["*\U0001f525 Trending pe CoinGecko*\n"]
+            for item in coins[:7]:
+                c         = item["item"]
+                rank      = c.get("market_cap_rank", "?")
+                chg       = c.get("change_24h", 0)
+                chg_emoji = "\U0001f7e2" if chg >= 0 else "\U0001f534"
+                sign      = "+" if chg >= 0 else ""
+                lines.append(f"• {c['name']} ({c['symbol']})  Rank #{rank}  {chg_emoji} {sign}{chg:.1f}%")
+            keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="\n".join(lines),
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Eroare trending: {e}")
+
+    await update.message.reply_text("✅ Test finalizat!")
+
 # ─── MAIN ──────────────────────────────────────────────────────────────────────
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("chatid",      cmd_chatid))
+   #app.add_handler(CommandHandler("test_auto",    cmd_test_auto))
     app.add_handler(CommandHandler("chatid",      cmd_chatid))
+   #app.add_handler(CommandHandler("test_auto",    cmd_test_auto))
     app.add_handler(CommandHandler("start",       cmd_start))
     app.add_handler(CommandHandler("help",        cmd_help))
     app.add_handler(CommandHandler("price",       cmd_price))
