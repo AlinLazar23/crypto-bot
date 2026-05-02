@@ -694,6 +694,100 @@ def format_bubbles(coins: list[dict], period: str) -> list[str]:
 
     return pages
 
+
+# ─── SECTOR DATA ───────────────────────────────────────────────────────────────
+
+SECTORS = {
+    "ai":      ("artificial-intelligence", "🤖 AI & Big Data"),
+    "defi":    ("decentralized-finance-defi", "🏦 DeFi"),
+    "gaming":  ("gaming", "🎮 Gaming & GameFi"),
+    "meme":    ("meme-token", "🐸 Meme Coins"),
+    "layer1":  ("layer-1", "⛓️ Layer 1"),
+    "layer2":  ("layer-2", "⚡ Layer 2"),
+    "rwa":     ("real-world-assets-rwa", "🏢 Real World Assets"),
+    "nft":     ("non-fungible-tokens-nft", "🖼️ NFT"),
+    "privacy": ("privacy-coins", "🔒 Privacy Coins"),
+    "oracle":  ("oracle", "🔮 Oracles"),
+    "storage": ("decentralized-storage", "💾 Storage"),
+    "social":  ("social-money-creator-token", "👥 SocialFi"),
+}
+
+def get_sector_coins(category_id: str, limit: int = 15) -> list[dict]:
+    """Fetch monede dintr-un sector CoinGecko."""
+    cached = cache_get(f"sector:{category_id}")
+    if cached is not None:
+        return cached
+    try:
+        r = requests.get(
+            f"{COINGECKO_BASE}/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "category": category_id,
+                "order": "market_cap_desc",
+                "per_page": limit,
+                "page": 1,
+                "sparkline": "false",
+            },
+            timeout=10,
+        )
+        if r.status_code == 200:
+            result = [
+                {
+                    "symbol":     c["symbol"].upper(),
+                    "name":       c["name"],
+                    "price":      c.get("current_price", 0),
+                    "change_24h": c.get("price_change_percentage_24h") or 0,
+                    "market_cap": c.get("market_cap") or 0,
+                    "rank":       c.get("market_cap_rank", "?"),
+                }
+                for c in r.json()
+            ]
+            cache_set(f"sector:{category_id}", result)
+            return result
+    except Exception as e:
+        logger.error(f"get_sector_coins error: {e}")
+    return []
+
+async def cmd_sector(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Fara argument → afiseaza lista sectoare
+    if not context.args:
+        lines = ["*📂 Sectoare disponibile*\n"]
+        for key, (_, label) in SECTORS.items():
+            lines.append(f"• `/sector {key}` — {label}")
+        lines.append("\n_Ex: /sector ai_")
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        return
+
+    key = context.args[0].lower()
+    if key not in SECTORS:
+        keys = ", ".join(f"`{k}`" for k in SECTORS.keys())
+        await update.message.reply_text(
+            f"❌ Sector necunoscut. Sectoare disponibile:\n{keys}",
+            parse_mode="Markdown")
+        return
+
+    category_id, label = SECTORS[key]
+    await update.message.reply_text(f"⏳ Se încarcă sectorul {label}...")
+
+    coins = get_sector_coins(category_id)
+    if not coins:
+        await update.message.reply_text("❌ Nu s-au putut obține datele. Încearcă din nou.")
+        return
+
+    lines = [f"*{label}*\n_Top {len(coins)} după market cap_\n" + "━" * 20 + "\n"]
+    for c in coins:
+        chg       = c["change_24h"]
+        chg_emoji = "🟢" if chg >= 0 else "🔴"
+        sign      = "+" if chg >= 0 else ""
+        lines.append(
+            f"{c['symbol']} #{c['rank']}  {fmt_price(c['price'])}  {chg_emoji} {sign}{chg:.1f}%"
+        )
+
+    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"sector:{key}")]]
+    await update.message.reply_text(
+        "\n".join(lines), parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard))
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📊 Top 10",      callback_data="top"),
@@ -981,11 +1075,36 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text, parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard))
 
+    elif data.startswith("sector:"):
+        key = data.split(":", 1)[1]
+        if key not in SECTORS:
+            await query.answer("Sector invalid.")
+            return
+        category_id, label = SECTORS[key]
+        coins = get_sector_coins(category_id)
+        if not coins:
+            await query.edit_message_text("❌ Nu s-au putut obține datele.")
+            return
+        lines = [f"*{label}*\n_Top {len(coins)} după market cap_\n" + "━" * 20 + "\n"]
+        for c in coins:
+            chg       = c["change_24h"]
+            chg_emoji = "🟢" if chg >= 0 else "🔴"
+            sign      = "+" if chg >= 0 else ""
+            lines.append(
+                f"{c['symbol']} #{c['rank']}  {fmt_price(c['price'])}  {chg_emoji} {sign}{chg:.1f}%"
+            )
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"sector:{key}")]]
+        await query.edit_message_text(
+            "\n".join(lines), parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard))
+
     elif data == "help":
         text = (
             "📖 *Comenzi disponibile*\n\n"
             "/price `<coin>` — Preț live\n"
             "/bubbles `<perioadă>` — CryptoBubbles\n"
+        "/sector — Lista sectoare crypto\n"
+        "/sector `<nume>` — Monede dintr-un sector\n"
             "/top — Top 10 monede\n"
             "/trending — Trending CoinGecko\n"
             "/alert `<coin> <preț>` — Alertă de preț\n"
@@ -1162,19 +1281,94 @@ async def cmd_test_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("✅ Test finalizat!")
 
+
+# ─── PUMP ALERT JOB ────────────────────────────────────────────────────────────
+
+# Retinem ce alerte au fost deja trimise ca sa nu spam-uim
+# Format: { "symbol:period": timestamp_last_sent }
+_pump_alerts_sent: dict[str, float] = {}
+PUMP_THRESHOLD   = 100.0   # % minim pentru notificare
+PUMP_COOLDOWN    = 43200   # 12h intre doua alerte pentru aceeasi moneda+perioada
+
+async def pump_alert_job(context: ContextTypes.DEFAULT_TYPE):
+    """Verifica la fiecare 30 minute daca vreo moneda a crescut 100%+."""
+    logger.info("pump_alert_job: verificare...")
+    try:
+        slugs = [slug for slug, _ in BUBBLES_COINS]
+        r = requests.get(
+            f"{COINGECKO_BASE}/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "ids": ",".join(slugs),
+                "order": "market_cap_desc",
+                "per_page": 100,
+                "page": 1,
+                "sparkline": "false",
+                "price_change_percentage": "24h,7d,30d",
+            },
+            timeout=30,
+            headers={"Accept": "application/json"},
+        )
+        if r.status_code != 200:
+            logger.warning(f"pump_alert_job: status {r.status_code}")
+            return
+
+        now = time.time()
+        for c in r.json():
+            symbol = c.get("symbol", "").upper()
+            price  = c.get("current_price", 0)
+
+            periods = {
+                "24h": c.get("price_change_percentage_24h") or 0,
+                "7D":  c.get("price_change_percentage_7d_in_currency") or 0,
+                "30D": c.get("price_change_percentage_30d_in_currency") or 0,
+            }
+
+            for period_label, chg in periods.items():
+                if chg < PUMP_THRESHOLD:
+                    continue
+
+                alert_key = f"{symbol}:{period_label}"
+                last_sent = _pump_alerts_sent.get(alert_key, 0)
+                if now - last_sent < PUMP_COOLDOWN:
+                    continue
+
+                # Trimite alerta
+                _pump_alerts_sent[alert_key] = now
+                text = (
+                    f"🚀 *PUMP ALERT — {symbol}*\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"💰 Preț curent: `{fmt_price(price)}`\n"
+                    f"📈 Creștere {period_label}: *+{chg:.1f}%* 🟢\n\n"
+                    f"⚠️ _Acesta nu este sfat financiar._"
+                )
+                try:
+                    await context.bot.send_message(
+                        chat_id=GROUP_CHAT_ID,
+                        text=text,
+                        parse_mode="Markdown",
+                    )
+                    logger.info(f"pump_alert_job: alerta trimisa {symbol} {period_label} +{chg:.1f}%")
+                except Exception as e:
+                    logger.error(f"pump_alert_job send error: {e}")
+
+    except Exception as e:
+        logger.error(f"pump_alert_job error: {e}")
+
 # ─── MAIN ──────────────────────────────────────────────────────────────────────
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("chatid",      cmd_chatid))
-   #app.add_handler(CommandHandler("test_auto",    cmd_test_auto))
+    app.add_handler(CommandHandler("test_auto",    cmd_test_auto))
     app.add_handler(CommandHandler("chatid",      cmd_chatid))
-   #app.add_handler(CommandHandler("test_auto",    cmd_test_auto))
+    app.add_handler(CommandHandler("test_auto",    cmd_test_auto))
     app.add_handler(CommandHandler("start",       cmd_start))
     app.add_handler(CommandHandler("help",        cmd_help))
     app.add_handler(CommandHandler("price",       cmd_price))
     app.add_handler(CommandHandler("bubbles",     cmd_bubbles))
+    app.add_handler(CommandHandler("sector",      cmd_sector))
     app.add_handler(CommandHandler("top",         cmd_top))
     app.add_handler(CommandHandler("trending",    cmd_trending))
     app.add_handler(CommandHandler("stats",       cmd_stats))
@@ -1184,6 +1378,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_callback))
 
     app.job_queue.run_repeating(check_alerts, interval=CHECK_ALERTS_INTERVAL, first=10)
+    app.job_queue.run_repeating(pump_alert_job, interval=1800, first=60)  # la fiecare 30 min
     ro_tz = pytz.timezone("Europe/Bucharest")
     app.job_queue.run_daily(auto_stats_job,    time=datetime.time(12, 0, tzinfo=ro_tz))
     app.job_queue.run_daily(auto_stats_job,    time=datetime.time(0,  0, tzinfo=ro_tz))
