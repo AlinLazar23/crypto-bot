@@ -129,6 +129,1310 @@ BUBBLES_COINS = [
 def fmt_price(value) -> str:
     if value is None:
         return "N/A"
+    try:
+        if value >= 1:
+            return "$" + "{:,.2f}".format(value)
+        return "$" + "{:.6f}".format(value)
+    except Exception:
+        return "N/A"
+
+def fmt_large(value) -> str:
+    if not value:
+        return "N/A"
+    try:
+        if value >= 1_000_000_000_000:
+            return "$" + "{:.2f}T".format(value / 1_000_000_000_000)
+        if value >= 1_000_000_000:
+            return "$" + "{:.2f}B".format(value / 1_000_000_000)
+        if value >= 1_000_000:
+            return "$" + "{:.1f}M".format(value / 1_000_000)
+        return "$" + "{:,.0f}".format(value)
+    except Exception:
+        return "N/A"
+
+def fmt_change(pct) -> str:
+    if pct is None:
+        return "N/A"
+    arrow = "🟢 ▲" if pct >= 0 else "🔴 ▼"
+    return f"{arrow} {abs(pct):.2f}%"
+
+def fmt_change_short(pct) -> str:
+    """Versiune scurtă pentru tabel bubbles."""
+    if pct is None:
+        return "  N/A "
+    sign  = "+" if pct >= 0 else ""
+    emoji = "🟢" if pct >= 0 else "🔴"
+    return f"{emoji}{sign}{pct:.1f}%"
+
+# ─── MAP SLUG COINGECKO ────────────────────────────────────────────────────────
+
+COIN_SLUG_MAP = {
+    "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana",
+    "BNB": "binancecoin", "XRP": "ripple", "ADA": "cardano",
+    "DOGE": "dogecoin", "DOT": "polkadot", "AVAX": "avalanche-2",
+    "LINK": "chainlink", "LTC": "litecoin", "UNI": "uniswap",
+    "XLM": "stellar", "TRX": "tron", "SHIB": "shiba-inu",
+    "MATIC": "matic-network", "NEAR": "near", "ATOM": "cosmos",
+    "FTM": "fantom", "ALGO": "algorand", "XMR": "monero",
+    "PEPE": "pepe", "SUI": "sui", "APT": "aptos",
+    "ARB": "arbitrum", "OP": "optimism", "INJ": "injective-protocol",
+    "FET": "fetch-ai", "RENDER": "render-token", "WIF": "dogwifcoin",
+    "ICP": "internet-computer", "HBAR": "hedera-hashgraph",
+    "FIL": "filecoin", "VET": "vechain", "SEI": "sei-network",
+    "TIA": "celestia", "GRT": "the-graph", "EGLD": "elrond-erd-2",
+    "VIRTUAL": "virtuals-protocol", "HYPE": "hyperliquid",
+    "ASTR": "astar", "KAS": "kaspa", "IMX": "immutable-x",
+    "MNT": "mantle", "STX": "stacks", "FLOW": "flow",
+    "GALA": "gala", "OKB": "okb",
+    # nume comune
+    "bitcoin": "bitcoin", "ethereum": "ethereum", "solana": "solana",
+    "ripple": "ripple", "cardano": "cardano", "dogecoin": "dogecoin",
+    "polkadot": "polkadot", "avalanche": "avalanche-2",
+    "chainlink": "chainlink", "litecoin": "litecoin",
+    "stellar": "stellar", "tron": "tron", "shiba": "shiba-inu",
+    "polygon": "matic-network", "near": "near", "cosmos": "cosmos",
+    "fantom": "fantom", "algorand": "algorand", "monero": "monero",
+    "bnb": "binancecoin", "binancecoin": "binancecoin",
+    "arbitrum": "arbitrum", "optimism": "optimism",
+    "injective": "injective-protocol", "filecoin": "filecoin",
+    "vechain": "vechain", "celestia": "celestia",
+    "hyperliquid": "hyperliquid", "kaspa": "kaspa",
+}
+
+def resolve_slug(query: str) -> str:
+    q    = query.strip()
+    slug = COIN_SLUG_MAP.get(q.upper()) or COIN_SLUG_MAP.get(q.lower())
+    return slug if slug else q.lower()
+
+# ─── DATE COINGECKO ────────────────────────────────────────────────────────────
+
+def get_coin_data(slug: str) -> dict | None:
+    try:
+        r = requests.get(
+            f"{COINGECKO_BASE}/coins/{slug}",
+            params={"localization": "false", "tickers": "false",
+                    "community_data": "false", "developer_data": "false"},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return None
+        d = r.json()
+        m = d["market_data"]
+        return {
+            "slug":       slug,
+            "symbol":     d["symbol"].upper(),
+            "name":       d["name"],
+            "rank":       d.get("market_cap_rank", "N/A"),
+            "price":      m["current_price"].get("usd", 0),
+            "change_1h":  m.get("price_change_percentage_1h_in_currency", {}).get("usd") or 0,
+            "change_24h": m.get("price_change_percentage_24h") or 0,
+            "change_7d":  m.get("price_change_percentage_7d") or 0,
+            "change_30d": m.get("price_change_percentage_30d") or 0,
+            "change_1y":  m.get("price_change_percentage_1y") or 0,
+            "high_24h":   m["high_24h"].get("usd", 0),
+            "low_24h":    m["low_24h"].get("usd", 0),
+            "market_cap": m["market_cap"].get("usd", 0),
+            "volume_24h": m["total_volume"].get("usd", 0),
+        }
+    except Exception as e:
+        logger.error(f"get_coin_data error ({slug}): {e}")
+    return None
+
+def get_top_coins(limit: int = 10) -> list[dict]:
+    cache_key = f"top:{limit}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        r = requests.get(
+            f"{COINGECKO_BASE}/coins/markets",
+            params={"vs_currency": "usd", "order": "market_cap_desc",
+                    "per_page": limit, "page": 1, "sparkline": "false"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            result = [{"symbol": c["symbol"].upper(), "name": c["name"],
+                     "slug": c["id"], "price": c["current_price"],
+                     "change_24h": c.get("price_change_percentage_24h") or 0}
+                    for c in r.json()]
+            cache_set(cache_key, result)
+            return result
+    except Exception as e:
+        logger.error(f"get_top_coins error: {e}")
+    return []
+
+def get_trending_coins() -> list[dict]:
+    """Trending de pe CoinGecko cu procente 24h."""
+    try:
+        r = requests.get(f"{COINGECKO_BASE}/search/trending", timeout=10)
+        if r.status_code != 200:
+            return []
+        coins = r.json().get("coins", [])
+        for coin in coins:
+            item = coin["item"]
+            try:
+                chg = item["data"]["price_change_percentage_24h"]["usd"]
+                item["change_24h"] = round(chg, 2)
+            except Exception:
+                item["change_24h"] = 0
+        return coins
+    except Exception as e:
+        logger.error(f"get_trending_coins error: {e}")
+    return []
+
+def get_bubbles_data(period: str = "24h") -> list[dict]:
+    """
+    Fetch toate monedele din lista CryptoBubbles cu performanța pe perioada cerută.
+    Folosește cache 2 minute pentru a evita rate limiting CoinGecko.
+    """
+    cache_key = f"bubbles:{period}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        logger.info(f"Cache hit pentru bubbles:{period}")
+        return cached
+
+    slugs = [slug for slug, _ in BUBBLES_COINS]
+
+    for attempt in range(3):
+        if attempt > 0:
+            time.sleep(10)
+        try:
+            r = requests.get(
+                f"{COINGECKO_BASE}/coins/markets",
+                params={
+                    "vs_currency": "usd",
+                    "ids": ",".join(slugs),
+                    "order": "market_cap_desc",
+                    "per_page": 100,
+                    "page": 1,
+                    "sparkline": "false",
+                    "price_change_percentage": "1h,24h,7d,30d,1y",
+                },
+                timeout=30,
+                headers={"Accept": "application/json"},
+            )
+            if r.status_code == 429:
+                logger.warning(f"Rate limited, attempt {attempt+1}/3, waiting 15s")
+                time.sleep(15)
+                continue
+            if r.status_code == 200:
+                result = []
+                for c in r.json():
+                    result.append({
+                        "slug":       c["id"],
+                        "symbol":     c["symbol"].upper(),
+                        "name":       c["name"],
+                        "rank":       c.get("market_cap_rank", 999),
+                        "price":      c.get("current_price", 0),
+                        "change_1h":  c.get("price_change_percentage_1h_in_currency") or 0,
+                        "change_24h": c.get("price_change_percentage_24h") or 0,
+                        "change_7d":  c.get("price_change_percentage_7d_in_currency") or 0,
+                        "change_30d": float(c.get("price_change_percentage_30d_in_currency") or 0),
+                        "change_1y":  float(c.get("price_change_percentage_1y_in_currency") or 0),
+                        "market_cap": c.get("market_cap", 0),
+                        "volume_24h": c.get("total_volume", 0),
+                    })
+                cache_set(cache_key, result)
+                return result
+        except Exception as e:
+            logger.error(f"get_bubbles_data error (attempt {attempt+1}): {e}")
+            continue
+    return []
+
+# ─── COMMAND HANDLERS ──────────────────────────────────────────────────────────
+
+
+# ─── STATS DATA SOURCES ────────────────────────────────────────────────────────
+
+def get_fear_greed() -> dict | None:
+    """Fear & Greed Index de pe alternative.me — gratuit, fără API key."""
+    cached = cache_get("fear_greed")
+    if cached is not None:
+        return cached
+    try:
+        r = requests.get(
+            "https://api.alternative.me/fng/?limit=8",
+            timeout=10,
+        )
+        if r.status_code == 200:
+            data = r.json().get("data", [])
+            if not data:
+                return None
+            today     = data[0]
+            yesterday = data[1] if len(data) > 1 else data[0]
+            week_vals = [int(d["value"]) for d in data]
+            result = {
+                "value":      int(today["value"]),
+                "label":      today["value_classification"],
+                "yesterday":  int(yesterday["value"]),
+                "week_avg":   round(sum(week_vals) / len(week_vals), 1),
+                "history":    week_vals,
+            }
+            cache_set("fear_greed", result)
+            return result
+    except Exception as e:
+        logger.error(f"get_fear_greed error: {e}")
+    return None
+
+def get_global_market() -> dict | None:
+    """Date globale piata direct de pe CoinGecko — fara ajustari."""
+    cached = cache_get("global_market")
+    if cached is not None:
+        return cached
+    try:
+        r = requests.get(f"{COINGECKO_BASE}/global", timeout=10)
+        if r.status_code != 200:
+            return None
+        d = r.json().get("data", {})
+        result = {
+            "total_market_cap":      d.get("total_market_cap", {}).get("usd", 0),
+            "total_volume_24h":      d.get("total_volume", {}).get("usd", 0),
+            "btc_dominance":         round(d.get("market_cap_percentage", {}).get("btc", 0), 2),
+            "eth_dominance":         round(d.get("market_cap_percentage", {}).get("eth", 0), 2),
+            "market_cap_change_24h": d.get("market_cap_change_percentage_24h_usd", 0),
+        }
+        cache_set("global_market", result)
+        return result
+    except Exception as e:
+        logger.error(f"get_global_market error: {e}")
+    return None
+
+
+def get_btc_eth_prices() -> dict:
+    """Prețuri BTC și ETH de pe CoinGecko."""
+    cached = cache_get("btc_eth_prices")
+    if cached is not None:
+        return cached
+    try:
+        r = requests.get(
+            f"{COINGECKO_BASE}/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "ids": "bitcoin,ethereum",
+                "order": "market_cap_desc",
+                "per_page": 2,
+                "page": 1,
+                "sparkline": "false",
+            },
+            timeout=10,
+        )
+        if r.status_code == 200:
+            result = {}
+            for c in r.json():
+                if c["id"] == "bitcoin":
+                    result["btc_price"]  = c.get("current_price", 0)
+                    result["btc_change"] = c.get("price_change_percentage_24h") or 0
+                elif c["id"] == "ethereum":
+                    result["eth_price"]  = c.get("current_price", 0)
+                    result["eth_change"] = c.get("price_change_percentage_24h") or 0
+            cache_set("btc_eth_prices", result)
+            return result
+    except Exception as e:
+        logger.error(f"get_btc_eth_prices error: {e}")
+    return {}
+
+# ─── STATS ENGINE ──────────────────────────────────────────────────────────────
+
+def fng_emoji(value: int) -> str:
+    if value <= 25:   return "😱"
+    if value <= 45:   return "😰"
+    if value <= 55:   return "😐"
+    if value <= 75:   return "😄"
+    return "🤑"
+
+def fng_bar(value: int) -> str:
+    filled = value // 10
+    return "█" * filled + "░" * (10 - filled)
+
+def interpret_fng(value: int) -> str:
+    if value <= 20:
+        return "💡 Panică extremă → zonă istorică de acumulare"
+    if value <= 40:
+        return "💡 Frică în piață → posibilă oportunitate de cumpărare"
+    if value <= 60:
+        return "💡 Piața este neutră → așteaptă confirmare direcție"
+    if value <= 80:
+        return "⚠️ Lăcomie crescută → fii precaut, nu urmări FOMO"
+    return "🚨 Euforie extremă → risc ridicat de corecție"
+
+def calc_market_score(fg: dict, global_data: dict, prices: dict) -> tuple[int, str]:
+    """
+    Calculează un scor 1-10 bazat pe sentiment, trend, volum, dominance.
+    Returnează (scor, label).
+    """
+    score = 5.0  # neutru
+
+    # Fear & Greed (0-100 → contribuție ±2)
+    fng_val = fg.get("value", 50)
+    if fng_val <= 20:   score += 1.5   # panică extremă = oportunitate
+    elif fng_val <= 40: score += 0.5
+    elif fng_val <= 60: score += 0.0
+    elif fng_val <= 80: score -= 0.5
+    else:               score -= 1.5   # euforie = risc
+
+    # Trend F&G (față de ieri)
+    trend = fng_val - fg.get("yesterday", fng_val)
+    if trend > 5:    score += 0.5
+    elif trend < -5: score -= 0.5
+
+    # BTC dominance: >55% = altcoins slabe (bear for alts), <40% = altseason
+    btc_dom = global_data.get("btc_dominance", 50)
+    if btc_dom > 55:   score -= 0.5
+    elif btc_dom < 42: score += 0.5
+
+    # Market cap change 24h
+    cap_chg = global_data.get("market_cap_change_24h", 0)
+    if cap_chg > 3:    score += 1.0
+    elif cap_chg > 1:  score += 0.5
+    elif cap_chg < -3: score -= 1.0
+    elif cap_chg < -1: score -= 0.5
+
+    # BTC price change 24h
+    btc_chg = prices.get("btc_change", 0)
+    if btc_chg > 3:    score += 0.5
+    elif btc_chg < -3: score -= 0.5
+
+    score = max(1, min(10, round(score)))
+
+    if score <= 3:   label = "Bearish 🔴"
+    elif score <= 4: label = "Slab Bearish 🟠"
+    elif score <= 6: label = "Neutru 🟡"
+    elif score <= 8: label = "Bullish 🟢"
+    else:            label = "Strong Bullish 🟢🟢"
+
+    return score, label
+
+def generate_insight(fg: dict, global_data: dict, prices: dict) -> str:
+    """Generează un insight automat bazat pe combinația de date."""
+    fng_val = fg.get("value", 50)
+    btc_chg = prices.get("btc_change", 0)
+    cap_chg = global_data.get("market_cap_change_24h", 0)
+    btc_dom = global_data.get("btc_dominance", 50)
+    week_avg = fg.get("week_avg", 50)
+
+    insights = []
+
+    # Divergență F&G vs BTC price
+    if fng_val <= 35 and btc_chg >= 0:
+        insights.append("📊 Deși piața e în frică, BTC rezistă → posibilă acumulare instituțională")
+    elif fng_val >= 70 and btc_chg < -1:
+        insights.append("⚠️ Greed ridicat dar BTC scade → semnal de slăbiciune, fii atent")
+
+    # Trend săptămânal vs azi
+    if fng_val > week_avg + 10:
+        insights.append("📈 Sentimentul s-a îmbunătățit față de săptămâna trecută → momentum pozitiv")
+    elif fng_val < week_avg - 10:
+        insights.append("📉 Sentimentul s-a deteriorat față de media săptămânii → prudență")
+
+    # Market cap + volum
+    if cap_chg > 2:
+        insights.append("💹 Market cap-ul total crește cu volum → trend bullish confirmat")
+    elif cap_chg < -2:
+        insights.append("📉 Scădere generalizată în piață → risc crescut pe termen scurt")
+
+    # BTC dominance
+    if btc_dom > 58:
+        insights.append("🔶 BTC dominance ridicat → altcoin-urile suferă, capital concentrat în BTC")
+    elif btc_dom < 42:
+        insights.append("🟣 BTC dominance scăzut → posibilă altseason în desfășurare")
+
+    # Panică extremă
+    if fng_val <= 15:
+        insights.append("🚨 Panică extremă istorică → zonele acestea au coincis cu fundul pieței în trecut")
+
+    if not insights:
+        insights.append("➡️ Piața este echilibrată momentan — niciun semnal extrem detectat")
+
+    return "\n".join(f"  {i}" for i in insights[:3])  # max 3 insights
+
+def format_stats(fg: dict, global_data: dict, prices: dict) -> str:
+    from datetime import datetime, timezone, timedelta
+    # Romania: UTC+2 iarna (EET), UTC+3 vara (EEST)
+    # Detectam automat ora de vara: ultima duminica martie - ultima duminica octombrie
+    utc_now = datetime.now(timezone.utc)
+    year = utc_now.year
+    # Ultima duminica din martie
+    march_last_sunday = max(
+        datetime(year, 3, day, 1, tzinfo=timezone.utc)
+        for day in range(25, 32)
+        if datetime(year, 3, day).weekday() == 6
+    )
+    # Ultima duminica din octombrie
+    oct_last_sunday = max(
+        datetime(year, 10, day, 1, tzinfo=timezone.utc)
+        for day in range(25, 32)
+        if datetime(year, 10, day).weekday() == 6
+    )
+    if march_last_sunday <= utc_now < oct_last_sunday:
+        ro_offset = timedelta(hours=3)   # EEST (vara)
+        ro_label  = "EEST"
+    else:
+        ro_offset = timedelta(hours=2)   # EET (iarna)
+        ro_label  = "EET"
+    ro_now = utc_now + ro_offset
+    now = ro_now.strftime(f"%H:%M {ro_label} (%d.%m.%Y)")
+
+    fng_val   = fg["value"]
+    fng_label = fg["label"]
+    fng_trend = fng_val - fg["yesterday"]
+    if fng_trend > 0:
+        trend_arrow = f"\u2191 +{fng_trend}"
+    elif fng_trend < 0:
+        trend_arrow = f"\u2193 {fng_trend}"
+    else:
+        trend_arrow = "\u2192 0"
+    bar = fng_bar(fng_val)
+
+    score, score_label = calc_market_score(fg, global_data, prices)
+    score_bar = "\u2b50" * score + "\u2606" * (10 - score)
+    insight   = generate_insight(fg, global_data, prices)
+
+    cap_chg   = global_data.get("market_cap_change_24h", 0)
+    cap_arrow = "\U0001f7e2 \u25b2" if cap_chg >= 0 else "\U0001f534 \u25bc"
+    btc_arrow = "\U0001f7e2 \u25b2" if prices.get("btc_change", 0) >= 0 else "\U0001f534 \u25bc"
+    eth_arrow = "\U0001f7e2 \u25b2" if prices.get("eth_change", 0) >= 0 else "\U0001f534 \u25bc"
+
+    lines = [
+        "\U0001f4ca *Market Stats* \u2014 " + now,
+        "\u2501" * 20,
+        "",
+        "\U0001f9e0 *SENTIMENT PIAT\u0102*",
+        fng_emoji(fng_val) + f" Fear & Greed: *{fng_val}/100* \u2014 _{fng_label}_",
+        f"`[{bar}]`",
+        f"\u2022 Fat\u0103 de ieri: `{trend_arrow}`",
+        f"\u2022 Media 7 zile: `{fg['week_avg']}/100`",
+        "\u2022 " + interpret_fng(fng_val),
+        "",
+        "\U0001f4b0 *OVERVIEW PIAT\u0102*",
+        f"\u2022 BTC:  `{fmt_price(prices.get('btc_price', 0))}`  {btc_arrow} `{abs(prices.get('btc_change', 0)):.1f}%`",
+        f"\u2022 ETH:  `{fmt_price(prices.get('eth_price', 0))}`  {eth_arrow} `{abs(prices.get('eth_change', 0)):.1f}%`",
+        f"\u2022 Mkt Cap Total: `{fmt_large(global_data.get('total_market_cap', 0))}`  {cap_arrow} `{abs(cap_chg):.1f}%`",
+        f"\u2022 Volum 24h:     `{fmt_large(global_data.get('total_volume_24h', 0))}`",
+        f"\u2022 BTC Dominance: `{global_data.get('btc_dominance', 0)}%`",
+        f"\u2022 ETH Dominance: `{global_data.get('eth_dominance', 0)}%`",
+        "",
+        "\U0001f9ea *INSIGHT AUTOMAT*",
+        insight,
+        "",
+        f"\u26a1 *MARKET SCORE: {score}/10 \u2014 {score_label}*",
+        f"`{score_bar}`",
+        "_Bazat pe: sentiment + trend + volum + dominance_",
+    ]
+    return "\n".join(lines)
+
+# ─── CMD STATS ─────────────────────────────────────────────────────────────────
+
+async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    msg = await update.message.reply_text("⏳ Se calculează statisticile pieței...")
+
+    # Retry de max 3 ori în caz de rate limiting
+    fg = global_data = prices = None
+    for attempt in range(3):
+        if attempt > 0:
+            await asyncio.sleep(2)
+        fg          = get_fear_greed()
+        time.sleep(0.5)
+        global_data = get_global_market()
+        time.sleep(0.5)
+        prices      = get_btc_eth_prices()
+        if fg and global_data and prices:
+            break
+
+    if not fg or not global_data or not prices:
+        await msg.edit_text("❌ Nu s-au putut obține datele. Încearcă din nou în 1 minut.")
+        return
+
+    text = format_stats(fg, global_data, prices)
+    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
+    await msg.edit_text(
+        text, parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def cmd_chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    user_id = str(update.effective_user.id)
+    await update.message.reply_text("Chat ID: " + chat_id + "\nUser ID: " + user_id)
+
+
+def format_bubbles(coins: list[dict], period: str) -> list[str]:
+    """Împarte lista în pagini de max 4000 caractere."""
+    period_key = {
+        "1h": "change_1h", "24h": "change_24h",
+        "7d": "change_7d", "30d": "change_30d", "1y": "change_1y",
+    }.get(period, "change_24h")
+
+    sorted_coins = sorted(coins, key=lambda c: float(c.get(period_key) or 0), reverse=True)
+
+    period_label = {
+        "1h": "1 Oră", "24h": "24 Ore", "7d": "7 Zile",
+        "30d": "30 Zile", "1y": "1 An"
+    }.get(period, period)
+
+    header = (
+        "\U0001f9ef *CryptoBubbles \u2014 " + period_label + "*\n"
+        + "_" + str(len(coins)) + " monede sortate dup\u0103 performan\u021b\u0103_\n"
+        + "\u2501" * 20 + "\n\n"
+    )
+
+    lines = []
+    for c in sorted_coins:
+        chg      = c.get(period_key, 0)
+        chg_emoji = "\U0001f7e2" if chg >= 0 else "\U0001f534"
+        sign     = "+" if chg >= 0 else ""
+        rank     = c["rank"]
+        rank_str = f"0{rank}" if isinstance(rank, int) and rank < 10 else str(rank)
+        price_str = fmt_price(c["price"])
+        chg_str  = f"{sign}{chg:.1f}%"
+        line = f"{c['symbol']} #{rank_str}  {price_str}  {chg_emoji} {chg_str}\n"
+        lines.append(line)
+
+    pages = []
+    current = header
+    for line in lines:
+        if len(current) + len(line) > 3800:
+            pages.append(current)
+            current = f"\U0001f9ef *CryptoBubbles \u2014 {period_label}* _(continuare)_\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
+        current += line
+    if current.strip():
+        pages.append(current)
+
+    return pages
+
+
+# ─── SECTOR DATA ───────────────────────────────────────────────────────────────
+
+SECTORS = {
+    "ai":      ("artificial-intelligence", "🤖 AI & Big Data"),
+    "defi":    ("decentralized-finance-defi", "🏦 DeFi"),
+    "gaming":  ("gaming", "🎮 Gaming & GameFi"),
+    "meme":    ("meme-token", "🐸 Meme Coins"),
+    "layer1":  ("layer-1", "⛓️ Layer 1"),
+    "layer2":  ("layer-2", "⚡ Layer 2"),
+    "rwa":     ("real-world-assets-rwa", "🏢 Real World Assets"),
+    "nft":     ("non-fungible-tokens-nft", "🖼️ NFT"),
+    "privacy": ("privacy-coins", "🔒 Privacy Coins"),
+    "oracle":  ("oracle", "🔮 Oracles"),
+    "storage": ("decentralized-storage", "💾 Storage"),
+    "social":  ("social-money-creator-token", "👥 SocialFi"),
+}
+
+def get_sector_coins(category_id: str, limit: int = 15) -> list[dict]:
+    """Fetch monede dintr-un sector CoinGecko cu retry."""
+    cache_key = f"sector:{category_id}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+    for attempt in range(3):
+        if attempt > 0:
+            time.sleep(8)
+        try:
+            r = requests.get(
+                f"{COINGECKO_BASE}/coins/markets",
+                params={
+                    "vs_currency": "usd",
+                    "category": category_id,
+                    "order": "market_cap_desc",
+                    "per_page": limit,
+                    "page": 1,
+                    "sparkline": "false",
+                },
+                timeout=15,
+                headers={"Accept": "application/json"},
+            )
+            if r.status_code == 429:
+                logger.warning(f"get_sector_coins rate limited, attempt {attempt+1}/3")
+                time.sleep(15)
+                continue
+            if r.status_code == 200:
+                result = [
+                    {
+                        "symbol":     c["symbol"].upper(),
+                        "name":       c["name"],
+                        "price":      c.get("current_price", 0),
+                        "change_24h": c.get("price_change_percentage_24h") or 0,
+                        "market_cap": c.get("market_cap") or 0,
+                        "rank":       c.get("market_cap_rank", "?"),
+                    }
+                    for c in r.json()
+                ]
+                cache_set(cache_key, result)
+                return result
+        except Exception as e:
+            logger.error(f"get_sector_coins error (attempt {attempt+1}): {e}")
+    return []
+
+async def cmd_sector(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Fara argument → afiseaza lista sectoare
+    if not context.args:
+        lines = ["*📂 Sectoare disponibile*\n"]
+        for key, (_, label) in SECTORS.items():
+            lines.append(f"• `/sector {key}` — {label}")
+        lines.append("\n_Ex: /sector ai_")
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        return
+
+    key = context.args[0].lower()
+    if key not in SECTORS:
+        keys = ", ".join(f"`{k}`" for k in SECTORS.keys())
+        await update.message.reply_text(
+            f"❌ Sector necunoscut. Sectoare disponibile:\n{keys}",
+            parse_mode="Markdown")
+        return
+
+    category_id, label = SECTORS[key]
+    await update.message.reply_text(f"⏳ Se încarcă sectorul {label}...")
+
+    coins = get_sector_coins(category_id)
+    if not coins:
+        await update.message.reply_text("❌ Nu s-au putut obține datele. Încearcă din nou.")
+        return
+
+    lines = [f"*{label}*\n_Top {len(coins)} după market cap_\n" + "━" * 20 + "\n"]
+    for c in coins:
+        chg       = c["change_24h"]
+        chg_emoji = "🟢" if chg >= 0 else "🔴"
+        sign      = "+" if chg >= 0 else ""
+        lines.append(
+            f"{c['symbol']} #{c['rank']}  {fmt_price(c['price'])}  {chg_emoji} {sign}{chg:.1f}%"
+        )
+
+    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"sector:{key}")]]
+    await update.message.reply_text(
+        "\n".join(lines), parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("📊 Top 10",      callback_data="top"),
+         InlineKeyboardButton("🔥 Trending",    callback_data="trending")],
+        [InlineKeyboardButton("🫧 Bubbles 24h", callback_data="bubbles:24h")],
+        [InlineKeyboardButton("📊 Stats",        callback_data="stats"),
+         InlineKeyboardButton("❓ Help",          callback_data="help")],
+    ]
+    await update.message.reply_text(
+        "👋 *Bun venit la CryptoBot!*\n\n"
+        "Date live din CoinGecko + TradingView.\n\n"
+        "Încearcă:\n"
+        "• /price BTC\n"
+        "• /bubbles 24h\n"
+        "• /bubbles 7d\n"
+        "• /top\n"
+        "• /alert BTC 70000\n",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "📖 *Comenzi disponibile*\n\n"
+        "/price `<coin>` — Preț live\n"
+        "  ex: `/price BTC` sau `/price bitcoin`\n\n"
+        "/bubbles — Lista CryptoBubbles 24h\n"
+        "/bubbles `1h` — Performanță 1 oră\n"
+        "/bubbles `7d` — Performanță 7 zile\n"
+        "/bubbles `30d` — Performanță 30 zile\n"
+        "/bubbles `1y` — Performanță 1 an\n\n"
+        "/top — Top 10 după market cap\n\n"
+        "/trending — Trending pe CoinGecko\n\n"
+        "/stats — Statistici piață + Market Score\n\n"
+        "/sector — Lista sectoare crypto\n"
+        "/sector `<nume>` — Ex: /sector ai\n\n"
+        "/alert `<coin> <preț>` — Alertă de preț\n\n"
+        "/myalerts — Alertele tale active\n\n"
+        "/removealert `<număr>` — Șterge alerta\n\n"
+        "/help — Acest mesaj\n"
+    )
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Folosire: `/price BTC`", parse_mode="Markdown")
+        return
+    query = " ".join(context.args)
+    await update.message.reply_text("⏳ Se încarcă datele...")
+    slug = resolve_slug(query)
+    data = get_coin_data(slug)
+    if not data:
+        await update.message.reply_text(
+            f"❌ *{query.upper()}* nu a fost găsit.\n"
+            f"Încearcă: `/price BTC`, `/price ETH`, `/price bitcoin`",
+            parse_mode="Markdown")
+        return
+    text = (
+        f"*{data['name']}* ({data['symbol']})  •  Rank #{data['rank']}\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"💰 Preț:      {fmt_price(data['price'])}\n"
+        f"📈 1h:        {fmt_change(data['change_1h'])}\n"
+        f"📈 24h:       {fmt_change(data['change_24h'])}\n"
+        f"📈 7 zile:    {fmt_change(data['change_7d'])}\n"
+        f"📈 30 zile:   {fmt_change(data['change_30d'])}\n"
+        f"─────────────────\n"
+        f"📊 24h High:  {fmt_price(data['high_24h'])}\n"
+        f"📊 24h Low:   {fmt_price(data['low_24h'])}\n"
+        f"🏦 Mkt Cap:   {fmt_large(data['market_cap'])}\n"
+        f"💹 Volum 24h: {fmt_large(data['volume_24h'])}\n"
+    )
+    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"price:{slug}")]]
+    await update.message.reply_text(text, parse_mode="Markdown",
+                                    reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def cmd_bubbles(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    valid_periods = ["1h", "24h", "7d", "30d", "1y"]
+    period = context.args[0].lower() if context.args else "24h"
+    if period not in valid_periods:
+        await update.message.reply_text(
+            "Folosire: `/bubbles 24h`\nOpțiuni: `1h`, `24h`, `7d`, `30d`, `1y`",
+            parse_mode="Markdown")
+        return
+
+    await update.message.reply_text(
+        f"⏳ Se încarcă CryptoBubbles ({period})...",
+        parse_mode="Markdown")
+
+    coins = get_bubbles_data(period)
+    if not coins:
+        await update.message.reply_text("❌ Nu s-au putut obține datele.")
+        return
+
+    pages = format_bubbles(coins, period)
+    keyboard = [
+        [
+            InlineKeyboardButton("1h",  callback_data="bubbles:1h"),
+            InlineKeyboardButton("24h", callback_data="bubbles:24h"),
+            InlineKeyboardButton("7d",  callback_data="bubbles:7d"),
+            InlineKeyboardButton("30d", callback_data="bubbles:30d"),
+            InlineKeyboardButton("1y",  callback_data="bubbles:1y"),
+        ]
+    ]
+    # Trimite prima pagină cu butoane, restul fără
+    for i, page in enumerate(pages):
+        if i == 0:
+            await update.message.reply_text(
+                page, parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            await update.message.reply_text(page, parse_mode="Markdown")
+
+async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("⏳ Se încarcă top 10...")
+    coins = get_top_coins(10)
+    if not coins:
+        await update.message.reply_text("❌ Nu s-au putut obține datele.")
+        return
+    lines = ["*🏆 Top 10 după Market Cap*\n"]
+    for i, c in enumerate(coins, 1):
+        chg   = c.get("change_24h") or 0
+        arrow = "▲" if chg >= 0 else "▼"
+        lines.append(
+            f"{i}. *{c['symbol']}* — {fmt_price(c['price'])}  "
+            f"{'🟢' if chg>=0 else '🔴'} {arrow}{abs(chg):.1f}%"
+        )
+    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="top")]]
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown",
+                                    reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def cmd_trending(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("⏳ Se încarcă trending...")
+    coins = get_trending_coins()
+    if not coins:
+        await update.message.reply_text("❌ Nu s-au putut obține datele.")
+        return
+    lines = ["*🔥 Trending pe CoinGecko*\n"]
+    for item in coins[:7]:
+        c    = item["item"]
+        rank = c.get("market_cap_rank", "?")
+        chg  = c.get("change_24h", 0)
+        chg_emoji = "🟢" if chg >= 0 else "🔴"
+        sign = "+" if chg >= 0 else ""
+        lines.append(f"• {c['name']} ({c['symbol']})  Rank #{rank}  {chg_emoji} {sign}{chg:.1f}%")
+    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown",
+                                    reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) < 2:
+        await update.message.reply_text("Folosire: `/alert BTC 70000`", parse_mode="Markdown")
+        return
+    query = context.args[0]
+    try:
+        target = float(context.args[1].replace(",", ""))
+    except ValueError:
+        await update.message.reply_text("❌ Preț invalid.", parse_mode="Markdown")
+        return
+    slug = resolve_slug(query)
+    data = get_coin_data(slug)
+    if not data:
+        await update.message.reply_text(
+            f"❌ *{query.upper()}* nu a fost găsit.", parse_mode="Markdown")
+        return
+    current   = data["price"]
+    direction = "above" if target > current else "below"
+    uid = update.effective_user.id
+    if uid not in user_alerts:
+        user_alerts[uid] = []
+    user_alerts[uid].append({
+        "slug": slug, "symbol": data["symbol"],
+        "name": data["name"], "target": target, "direction": direction,
+    })
+    save_alerts()
+    arrow = "📈 crește până la" if direction == "above" else "📉 scade până la"
+    await update.message.reply_text(
+        f"✅ Alertă setată: *{data['name']}* {arrow} {fmt_price(target)}\n"
+        f"_(Preț curent: {fmt_price(current)})_",
+        parse_mode="Markdown")
+
+async def cmd_myalerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid    = update.effective_user.id
+    alerts = user_alerts.get(uid, [])
+    if not alerts:
+        await update.message.reply_text("Nu ai alerte active. Folosește /alert.")
+        return
+    lines = ["*Alertele tale*\n"]
+    for i, a in enumerate(alerts, 1):
+        arrow = "▲" if a["direction"] == "above" else "▼"
+        lines.append(f"{i}. *{a['name']}* ({a['symbol']}) {arrow} {fmt_price(a['target'])}")
+    lines.append("\nFolosește `/removealert <număr>` pentru a șterge.")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+async def cmd_removealert(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid    = update.effective_user.id
+    alerts = user_alerts.get(uid, [])
+    if not alerts:
+        await update.message.reply_text("Nu ai alerte de șters.")
+        return
+    if not context.args:
+        await update.message.reply_text("Folosire: `/removealert 1`", parse_mode="Markdown")
+        return
+    try:
+        n       = int(context.args[0])
+        removed = alerts.pop(n - 1)
+        await update.message.reply_text(
+            f"🗑 Alertă ștearsă: *{removed['name']}* @ {fmt_price(removed['target'])}",
+            parse_mode="Markdown")
+    except (ValueError, IndexError):
+        await update.message.reply_text("❌ Număr invalid. Folosește /myalerts.")
+
+# ─── INLINE BUTTON CALLBACKS ───────────────────────────────────────────────────
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data  = query.data
+
+    if data == "top":
+        coins = get_top_coins(10)
+        if not coins:
+            await query.edit_message_text("❌ Nu s-au putut obține datele.")
+            return
+        lines = ["*🏆 Top 10 după Market Cap*\n"]
+        for i, c in enumerate(coins, 1):
+            chg   = c.get("change_24h") or 0
+            arrow = "▲" if chg >= 0 else "▼"
+            lines.append(
+                f"{i}. *{c['symbol']}* — {fmt_price(c['price'])}  "
+                f"{'🟢' if chg>=0 else '🔴'} {arrow}{abs(chg):.1f}%")
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="top")]]
+        await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
+                                      reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data == "trending":
+        coins = get_trending_coins()
+        lines = ["*🔥 Trending pe CoinGecko*\n"]
+        for item in coins[:7]:
+            c    = item["item"]
+            rank = c.get("market_cap_rank", "?")
+            lines.append(f"• *{c['name']}* ({c['symbol']})  •  Rank #{rank}")
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
+        await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
+                                      reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("bubbles:"):
+        period = data.split(":", 1)[1]
+        await query.edit_message_text(
+            f"⏳ Se încarcă CryptoBubbles ({period})...", parse_mode="Markdown")
+        coins = get_bubbles_data(period)
+        if not coins:
+            await query.edit_message_text("❌ Nu s-au putut obține datele.")
+            return
+        pages   = format_bubbles(coins, period)
+        keyboard = [[
+            InlineKeyboardButton("1h",  callback_data="bubbles:1h"),
+            InlineKeyboardButton("24h", callback_data="bubbles:24h"),
+            InlineKeyboardButton("7d",  callback_data="bubbles:7d"),
+            InlineKeyboardButton("30d", callback_data="bubbles:30d"),
+            InlineKeyboardButton("1y",  callback_data="bubbles:1y"),
+        ]]
+        await query.edit_message_text(
+            pages[0], parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard))
+        # Paginile extra ca mesaje noi
+        for page in pages[1:]:
+            await query.message.reply_text(page, parse_mode="Markdown")
+
+    elif data == "stats":
+        fg = global_data = prices = None
+        for attempt in range(3):
+            if attempt > 0:
+                await asyncio.sleep(2)
+            fg          = get_fear_greed()
+            time.sleep(0.5)
+            global_data = get_global_market()
+            time.sleep(0.5)
+            prices      = get_btc_eth_prices()
+            if fg and global_data and prices:
+                break
+        if not fg or not global_data or not prices:
+            await query.edit_message_text("❌ Nu s-au putut obține datele. Încearcă în 1 minut.")
+            return
+        text = format_stats(fg, global_data, prices)
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
+        await query.edit_message_text(
+            text, parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("sector:"):
+        key = data.split(":", 1)[1]
+        if key not in SECTORS:
+            await query.answer("Sector invalid.")
+            return
+        category_id, label = SECTORS[key]
+        coins = get_sector_coins(category_id)
+        if not coins:
+            await query.edit_message_text("❌ Nu s-au putut obține datele.")
+            return
+        lines = [f"*{label}*\n_Top {len(coins)} după market cap_\n" + "━" * 20 + "\n"]
+        for c in coins:
+            chg       = c["change_24h"]
+            chg_emoji = "🟢" if chg >= 0 else "🔴"
+            sign      = "+" if chg >= 0 else ""
+            lines.append(
+                f"{c['symbol']} #{c['rank']}  {fmt_price(c['price'])}  {chg_emoji} {sign}{chg:.1f}%"
+            )
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"sector:{key}")]]
+        await query.edit_message_text(
+            "\n".join(lines), parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data == "help":
+        text = (
+            "📖 *Comenzi disponibile*\n\n"
+            "/price `<coin>` — Preț live\n"
+            "/bubbles `<perioadă>` — CryptoBubbles\n"
+        "/sector — Lista sectoare crypto\n"
+        "/sector `<nume>` — Ex: `/sector ai`\n"
+            "/top — Top 10 monede\n"
+            "/trending — Trending CoinGecko\n"
+            "/alert `<coin> <preț>` — Alertă de preț\n"
+            "/myalerts — Alertele tale\n"
+            "/removealert `<număr>` — Șterge alertă\n"
+        )
+        await query.edit_message_text(text, parse_mode="Markdown")
+
+    elif data.startswith("price:"):
+        slug = data.split(":", 1)[1]
+        info = get_coin_data(slug)
+        if not info:
+            await query.edit_message_text("❌ Nu s-au putut obține datele.")
+            return
+        text = (
+            f"*{info['name']}* ({info['symbol']})  •  Rank #{info['rank']}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💰 Preț:      {fmt_price(info['price'])}\n"
+            f"📈 1h:        {fmt_change(info['change_1h'])}\n"
+            f"📈 24h:       {fmt_change(info['change_24h'])}\n"
+            f"📈 7 zile:    {fmt_change(info['change_7d'])}\n"
+            f"📈 30 zile:   {fmt_change(info['change_30d'])}\n"
+            f"─────────────────\n"
+            f"📊 24h High:  {fmt_price(info['high_24h'])}\n"
+            f"📊 24h Low:   {fmt_price(info['low_24h'])}\n"
+            f"🏦 Mkt Cap:   {fmt_large(info['market_cap'])}\n"
+            f"💹 Volum 24h: {fmt_large(info['volume_24h'])}\n"
+        )
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"price:{slug}")]]
+        await query.edit_message_text(text, parse_mode="Markdown",
+                                      reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+
+# ─── BACKGROUND JOB: CHECK ALERTS ─────────────────────────────────────────────
+
+async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
+    if not user_alerts:
+        return
+    for uid, alerts in list(user_alerts.items()):
+        to_remove = []
+        for i, alert in enumerate(alerts):
+            data = get_coin_data(alert["slug"])
+            if not data:
+                continue
+            current   = data["price"]
+            target    = alert["target"]
+            direction = alert.get("direction", "above")
+            hit = (current >= target) if direction == "above" else (current <= target)
+            if hit:
+                verb = "crescut la" if direction == "above" else "scăzut la"
+                try:
+                    await context.bot.send_message(
+                        chat_id=uid,
+                        text=(
+                            f"🔔 *Alertă de preț activată!*\n\n"
+                            f"*{alert['name']}* ({alert['symbol']}) a {verb} "
+                            f"{fmt_price(current)}\n"
+                            f"Ținta ta era: {fmt_price(target)}"
+                        ),
+                        parse_mode="Markdown",
+                    )
+                except Exception as e:
+                    logger.error(f"Alert send failed: {e}")
+                to_remove.append(i)
+        for i in reversed(to_remove):
+            alerts.pop(i)
+        if to_remove:
+            save_alerts()
+
+
+# ─── AUTO JOBS (stats + trending la fiecare 12h) ──────────────────────────────
+
+async def auto_stats_job(context: ContextTypes.DEFAULT_TYPE):
+    """Trimite /stats automat în grup la fiecare 12h."""
+    try:
+        fg          = get_fear_greed()
+        time.sleep(0.5)
+        global_data = get_global_market()
+        time.sleep(0.5)
+        prices      = get_btc_eth_prices()
+        if not fg or not global_data or not prices:
+            logger.error("auto_stats_job: nu s-au putut obtine datele")
+            return
+        text     = format_stats(fg, global_data, prices)
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
+        await context.bot.send_message(
+            chat_id=GROUP_CHAT_ID,
+            text=text,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        logger.info("auto_stats_job: trimis cu succes")
+    except Exception as e:
+        logger.error(f"auto_stats_job error: {e}")
+
+async def auto_trending_job(context: ContextTypes.DEFAULT_TYPE):
+    """Trimite /trending automat în grup la fiecare 12h."""
+    try:
+        coins = get_trending_coins()
+        if not coins:
+            logger.error("auto_trending_job: nu s-au putut obtine datele")
+            return
+        lines = ["*\U0001f525 Trending pe CoinGecko*\n"]
+        for item in coins[:7]:
+            c         = item["item"]
+            rank      = c.get("market_cap_rank", "?")
+            chg       = c.get("change_24h", 0)
+            chg_emoji = "\U0001f7e2" if chg >= 0 else "\U0001f534"
+            sign      = "+" if chg >= 0 else ""
+            lines.append(f"• {c['name']} ({c['symbol']})  Rank #{rank}  {chg_emoji} {sign}{chg:.1f}%")
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
+        await context.bot.send_message(
+            chat_id=GROUP_CHAT_ID,
+            text="\n".join(lines),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        logger.info("auto_trending_job: trimis cu succes")
+    except Exception as e:
+        logger.error(f"auto_trending_job error: {e}")
+
+
+async def cmd_test_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Testează mesajele automate (stats + trending) direct în chat-ul curent."""
+    chat_id = update.effective_chat.id
+    await update.message.reply_text("⏳ Se trimit mesajele automate de test...")
+
+    # Stats
+    try:
+        fg = global_data = prices = None
+        for attempt in range(3):
+            if attempt > 0:
+                await asyncio.sleep(2)
+            fg          = get_fear_greed()
+            time.sleep(0.5)
+            global_data = get_global_market()
+            time.sleep(0.5)
+            prices      = get_btc_eth_prices()
+            if fg and global_data and prices:
+                break
+        if fg and global_data and prices:
+            text = format_stats(fg, global_data, prices)
+            keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
+            await context.bot.send_message(
+                chat_id=chat_id, text=text,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Eroare stats: {e}")
+
+    # Trending
+    try:
+        coins = get_trending_coins()
+        if coins:
+            lines = ["*\U0001f525 Trending pe CoinGecko*\n"]
+            for item in coins[:7]:
+                c         = item["item"]
+                rank      = c.get("market_cap_rank", "?")
+                chg       = c.get("change_24h", 0)
+                chg_emoji = "\U0001f7e2" if chg >= 0 else "\U0001f534"
+                sign      = "+" if chg >= 0 else ""
+                lines.append(f"• {c['name']} ({c['symbol']})  Rank #{rank}  {chg_emoji} {sign}{chg:.1f}%")
+            keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="\n".join(lines),
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Eroare trending: {e}")
+
+    await update.message.reply_text("✅ Test finalizat!")
+
+
+# ─── PUMP ALERT JOB ────────────────────────────────────────────────────────────
+
+# Retinem ce alerte au fost deja trimise ca sa nu spam-uim
+# Format: { "symbol:period": timestamp_last_sent }
+_pump_alerts_sent: dict[str, float] = {}
+PUMP_THRESHOLD   = 100.0   # % minim pentru notificare
+PUMP_COOLDOWN    = 43200   # 12h intre doua alerte pentru aceeasi moneda+perioada
+
+async def pump_alert_job(context: ContextTypes.DEFAULT_TYPE):
+    """Verifica la fiecare 30 minute daca vreo moneda a crescut 100%+."""
+    logger.info("pump_alert_job: verificare...")
+    try:
+        slugs = [slug for slug, _ in BUBBLES_COINS]
+        r = requests.get(
+            f"{COINGECKO_BASE}/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "ids": ",".join(slugs),
+                "order": "market_cap_desc",
+                "per_page": 100,
+                "page": 1,
+                "sparkline": "false",
+                "price_change_percentage": "24h,7d,30d",
+            },
+            timeout=30,
+            headers={"Accept": "application/json"},
+        )
+        if r.status_code != 200:
+            logger.warning(f"pump_alert_job: status {r.status_code}")
+            return
+
+        now = time.time()
+        for c in r.json():
+            symbol = c.get("symbol", "").upper()
+            price  = c.get("current_price", 0)
+
+            periods = {
+                "24h": c.get("price_change_percentage_24h") or 0,
+                "7D":  c.get("price_change_percentage_7d_in_currency") or 0,
+                "30D": c.get("price_change_percentage_30d_in_currency") or 0,
+            }
+
+            for period_label, chg in periods.items():
+                if chg < PUMP_THRESHOLD:
+                    continue
+
+                alert_key = f"{symbol}:{period_label}"
+                last_sent = _pump_alerts_sent.get(alert_key, 0)
+                if now - last_sent < PUMP_COOLDOWN:
+                    continue
+
+                # Trimite alerta
+                _pump_alerts_sent[alert_key] = now
+                text = (
+                    f"🚀 *PUMP ALERT — {symbol}*\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"💰 Preț curent: `{fmt_price(price)}`\n"
+                    f"📈 Creștere {period_label}: *+{chg:.1f}%* 🟢\n\n"
+                    f"⚠️ _Acesta nu este sfat financiar._"
+                )
+                try:
+                    await context.bot.send_message(
+                        chat_id=GROUP_CHAT_ID,
+                        text=text,
+                        parse_mode="Markdown",
+                    )
+                    logger.info(f"pump_alert_job: alerta trimisa {symbol} {period_label} +{chg:.1f}%")
+                except Exception as e:
+                    logger.error(f"pump_alert_job send error: {e}")
+
+    except Exception as e:
+        logger.error(f"pump_alert_job error: {e}")
+
+# ─── MAIN ──────────────────────────────────────────────────────────────────────
+
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("chatid",      cmd_chatid))
+    app.add_handler(CommandHandler("test_auto",    cmd_test_auto))
+    app.add_handler(CommandHandler("chatid",      cmd_chatid))
+    app.add_handler(CommandHandler("test_auto",    cmd_test_auto))
+    app.add_handler(CommandHandler("start",       cmd_start))
+    app.add_handler(CommandHandler("help",        cmd_help))
+    app.add_handler(CommandHandler("price",       cmd_price))
+    app.add_handler(CommandHandler("bubbles",     cmd_bubbles))
+    app.add_handler(CommandHandler("sector",      cmd_sector))
+    app.add_handler(CommandHandler("top",         cmd_top))
+    app.add_handler(CommandHandler("trending",    cmd_trending))
+    app.add_handler(CommandHandler("stats",       cmd_stats))
+    app.add_handler(CommandHandler("alert",       cmd_alert))
+    app.add_handler(CommandHandler("myalerts",    cmd_myalerts))
+    app.add_handler(CommandHandler("removealert", cmd_removealert))
+    app.add_handler(CallbackQueryHandler(button_callback))
+
+    app.job_queue.run_repeating(check_alerts, interval=CHECK_ALERTS_INTERVAL, first=10)
+    app.job_queue.run_repeating(pump_alert_job, interval=1800, first=60)  # la fiecare 30 min
+    ro_tz = pytz.timezone("Europe/Bucharest")
+    app.job_queue.run_daily(auto_stats_job,    time=datetime.time(12, 0, tzinfo=ro_tz))
+    app.job_queue.run_daily(auto_stats_job,    time=datetime.time(0,  0, tzinfo=ro_tz))
+    app.job_queue.run_daily(auto_trending_job, time=datetime.time(12, 5, tzinfo=ro_tz))
+    app.job_queue.run_daily(auto_trending_job, time=datetime.time(0,  5, tzinfo=ro_tz))
+
+    print("🤖 CryptoBot rulează... Apasă Ctrl+C pentru a opri.")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == "__main__":
+    main()    ("sui",                   "SUI"),
+    ("internet-computer",     "ICP"),
+    ("polkadot",              "DOT"),
+    ("astar",                 "ASTR"),
+    ("aster-2",               "ASTER"),
+    ("cosmos",                "ATOM"),
+    ("algorand",              "ALGO"),
+    ("arbitrum",              "ARB"),
+    ("filecoin",              "FIL"),
+    ("vechain",               "VET"),
+    ("virtuals-protocol",     "VIRTUAL"),
+    ("sei-network",           "SEI"),
+    ("injective-protocol",    "INJ"),
+    ("celestia",              "TIA"),
+    ("the-graph",             "GRT"),
+    ("elrond-erd-2",          "EGLD"),
+    ("binancecoin",           "BNB"),
+    ("ripple",                "XRP"),
+    ("fetch-ai",              "FET"),
+    ("gala",                  "GALA"),
+]
+
+# ─── FORMATARE ─────────────────────────────────────────────────────────────────
+
+def fmt_price(value) -> str:
+    if value is None:
+        return "N/A"
     if value >= 1:
         return f"${value:,.2f}"
     return f"${value:.6f}"
