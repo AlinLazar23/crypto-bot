@@ -40,7 +40,7 @@ from telegram.ext import (
 )
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
-BOT_TOKEN      = os.environ.get("BOT_TOKEN", "")  # ← Pune token-ul în Railway Variables, nu aici!
+BOT_TOKEN             = os.environ.get("BOT_TOKEN", "")
 COINGECKO_BASE        = "https://api.coingecko.com/api/v3"
 CHECK_ALERTS_INTERVAL = 60
 GROUP_CHAT_ID         = -1003982541636
@@ -284,6 +284,10 @@ def get_top_coins(limit=10):
 def get_trending_coins():
     cached = cache_get("trending")
     if cached is not None:
+        # Asigura ca change_24h exista si in cache
+        for coin in cached:
+            if "change_24h" not in coin["item"]:
+                coin["item"]["change_24h"] = 0
         return cached
     data = cg_get("/search/trending")
     if not data:
@@ -889,6 +893,9 @@ async def button_callback(update, context):
                                       reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "trending":
+        # Sterge cache pentru a obtine date proaspete cu procente
+        if "trending" in _cache:
+            del _cache["trending"]
         coins = get_trending_coins()
         if not coins:
             await query.edit_message_text("❌ Nu s-au putut obtine datele.")
@@ -1131,6 +1138,58 @@ async def pump_alert_job(context):
     except Exception as e:
         logger.error("pump_alert_job error: " + str(e))
 
+
+async def cmd_test_auto(update, context):
+    """Trimite imediat stats si trending in chat-ul curent pentru testare."""
+    chat_id = update.effective_chat.id
+    await update.message.reply_text("⏳ Se trimit mesajele de test...")
+
+    # Stats
+    try:
+        fg = global_data = prices = None
+        for attempt in range(3):
+            if attempt > 0:
+                await asyncio.sleep(2)
+            fg          = get_fear_greed()
+            time.sleep(0.5)
+            global_data = get_global_market()
+            time.sleep(0.5)
+            prices      = get_btc_eth_prices()
+            if fg and global_data and prices:
+                break
+        if fg and global_data and prices:
+            text = format_stats(fg, global_data, prices)
+            keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
+            await context.bot.send_message(
+                chat_id=chat_id, text=text,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard))
+    except Exception as e:
+        await update.message.reply_text("Eroare stats: " + str(e))
+
+    # Trending
+    try:
+        coins = get_trending_coins()
+        if coins:
+            lines = ["*Trending pe CoinGecko*\n"]
+            for item in coins[:7]:
+                c         = item["item"]
+                rank      = c.get("market_cap_rank", "?")
+                chg       = c.get("change_24h", 0)
+                chg_emoji = "🟢" if chg >= 0 else "🔴"
+                sign      = "+" if chg >= 0 else ""
+                lines.append("• " + c["name"] + " (" + c["symbol"] + ")  Rank #" + str(rank) + "  " + chg_emoji + " " + sign + "{:.1f}%".format(chg))
+            keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="\n".join(lines),
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard))
+    except Exception as e:
+        await update.message.reply_text("Eroare trending: " + str(e))
+
+    await update.message.reply_text("✅ Test finalizat!")
+
 # ─── MAIN ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -1148,6 +1207,7 @@ def main():
     app.add_handler(CommandHandler("alert",       cmd_alert))
     app.add_handler(CommandHandler("myalerts",    cmd_myalerts))
     app.add_handler(CommandHandler("removealert", cmd_removealert))
+    #app.add_handler(CommandHandler("test_auto",   cmd_test_auto))  # Dezactiveaza dupa testare
     app.add_handler(CallbackQueryHandler(button_callback))
 
     app.job_queue.run_repeating(check_alerts,   interval=CHECK_ALERTS_INTERVAL, first=10)
