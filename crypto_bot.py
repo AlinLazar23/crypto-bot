@@ -45,7 +45,7 @@ COINGECKO_BASE        = "https://api.coingecko.com/api/v3"
 CHECK_ALERTS_INTERVAL = 60
 GROUP_CHAT_ID         = -1003982541636
 AUTO_STATS_INTERVAL   = 43200
-PUMP_THRESHOLD        = 100.0
+PUMP_THRESHOLD        = 1.0
 PUMP_COOLDOWN         = 43200
 
 logging.basicConfig(
