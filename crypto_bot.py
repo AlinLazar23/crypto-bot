@@ -6,7 +6,6 @@ Compatibil Python 3.8+
 
 Requirements:
     pip install python-telegram-bot[job-queue] requests pytz
-    -
 
 Commands:
     /start           - Bun venit
