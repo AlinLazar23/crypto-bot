@@ -626,7 +626,6 @@ async def cmd_help(update, context):
         "/bubbles 1h/7d/30d/1y - Alta perioada\n"
         "/stats - Statistici piata\n"
         "/sector - Lista sectoare\n"
-        "/sector <nume> - Ex: /sector ai\n"
         "/alert <coin> <pret> - Alerta de pret\n"
         "/myalerts - Alertele tale\n"
         "/removealert <numar> - Sterge alerta\n"
