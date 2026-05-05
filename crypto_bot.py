@@ -30,7 +30,7 @@ BOT_TOKEN             = os.environ.get("BOT_TOKEN", "")
 COINGECKO_BASE        = "https://api.coingecko.com/api/v3"
 CHECK_ALERTS_INTERVAL = 60
 GROUP_CHAT_ID         = -1003982541636
-PUMP_THRESHOLD        = 1.0
+PUMP_THRESHOLD        = 100.0
 PUMP_COOLDOWN         = 43200
 
 logging.basicConfig(
