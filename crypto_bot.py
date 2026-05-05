@@ -1,25 +1,11 @@
 """
 Crypto Market Updates Telegram Bot
 ====================================
-Surse: CoinGecko + TradingView + alternative.me
+Surse: CoinGecko + alternative.me
 Compatibil Python 3.8+
 
 Requirements:
     pip install python-telegram-bot[job-queue] requests pytz
-
-Commands:
-    /start           - Bun venit
-    /price BTC       - Pret live
-    /top             - Top 10 dupa market cap
-    /trending        - Trending CoinGecko
-    /bubbles         - Lista CryptoBubbles
-    /stats           - Statistici piata
-    /sector          - Lista sectoare crypto
-    /alert BTC 70000 - Alerta de pret
-    /myalerts        - Alertele tale
-    /removealert 1   - Sterge alerta
-    /chatid          - Afla chat ID
-    /help            - Ajutor
 """
 
 import os
@@ -44,7 +30,6 @@ BOT_TOKEN             = os.environ.get("BOT_TOKEN", "")
 COINGECKO_BASE        = "https://api.coingecko.com/api/v3"
 CHECK_ALERTS_INTERVAL = 60
 GROUP_CHAT_ID         = -1003982541636
-AUTO_STATS_INTERVAL   = 43200
 PUMP_THRESHOLD        = 0.1
 PUMP_COOLDOWN         = 43200
 
@@ -208,7 +193,6 @@ SECTORS = {
 # ─── DATE COINGECKO ────────────────────────────────────────────────────────────
 
 def cg_get(endpoint, params=None, timeout=20):
-    """Request la CoinGecko cu retry automat si delay progresiv."""
     delays = [0, 5, 15]
     for attempt in range(3):
         if delays[attempt] > 0:
@@ -272,10 +256,10 @@ def get_top_coins(limit=10):
     if not data:
         return []
     result = [{
-        "symbol":    c["symbol"].upper(),
-        "name":      c["name"],
-        "slug":      c["id"],
-        "price":     c["current_price"],
+        "symbol":     c["symbol"].upper(),
+        "name":       c["name"],
+        "slug":       c["id"],
+        "price":      c["current_price"],
         "change_24h": c.get("price_change_percentage_24h") or 0,
     } for c in data]
     cache_set("top:" + str(limit), result)
@@ -284,7 +268,6 @@ def get_top_coins(limit=10):
 def get_trending_coins():
     cached = cache_get("trending")
     if cached is not None:
-        # Asigura ca change_24h exista si in cache
         for coin in cached:
             if "change_24h" not in coin["item"]:
                 coin["item"]["change_24h"] = 0
@@ -439,11 +422,11 @@ def fng_bar(value):
     return "█" * filled + "░" * (10 - filled)
 
 def interpret_fng(value):
-    if value <= 20:  return "💡 Panica extrema -> zona istorica de acumulare"
-    if value <= 40:  return "💡 Frica in piata -> posibila oportunitate de cumparare"
-    if value <= 60:  return "💡 Piata este neutra -> asteapta confirmare directie"
-    if value <= 80:  return "⚠️ Lacomie crescuta -> fii precaut, nu urmari FOMO"
-    return "🚨 Euforie extrema -> risc ridicat de correctie"
+    if value <= 20:  return "Panica extrema - zona istorica de acumulare"
+    if value <= 40:  return "Frica in piata - posibila oportunitate de cumparare"
+    if value <= 60:  return "Piata este neutra - asteapta confirmare directie"
+    if value <= 80:  return "Lacomie crescuta - fii precaut, nu urmari FOMO"
+    return "Euforie extrema - risc ridicat de corectie"
 
 def calc_market_score(fg, global_data, prices):
     score = 5.0
@@ -468,11 +451,11 @@ def calc_market_score(fg, global_data, prices):
     if btc_chg > 3:    score += 0.5
     elif btc_chg < -3: score -= 0.5
     score = max(1, min(10, round(score)))
-    if score <= 3:   label = "Bearish 🔴"
-    elif score <= 4: label = "Slab Bearish 🟠"
-    elif score <= 6: label = "Neutru 🟡"
-    elif score <= 8: label = "Bullish 🟢"
-    else:            label = "Strong Bullish 🟢🟢"
+    if score <= 3:   label = "Bearish"
+    elif score <= 4: label = "Slab Bearish"
+    elif score <= 6: label = "Neutru"
+    elif score <= 8: label = "Bullish"
+    else:            label = "Strong Bullish"
     return score, label
 
 def generate_insight(fg, global_data, prices):
@@ -483,25 +466,23 @@ def generate_insight(fg, global_data, prices):
     week_avg = fg.get("week_avg", 50)
     insights = []
     if fng_val <= 35 and btc_chg >= 0:
-        insights.append("📊 Desi piata e in frica, BTC rezista -> posibila acumulare institutionala")
+        insights.append("BTC rezista desi piata e in frica - posibila acumulare institutionala")
     elif fng_val >= 70 and btc_chg < -1:
-        insights.append("⚠️ Greed ridicat dar BTC scade -> semnal de slabiciune")
+        insights.append("Greed ridicat dar BTC scade - semnal de slabiciune")
     if fng_val > week_avg + 10:
-        insights.append("📈 Sentimentul s-a imbunatatit fata de saptamana trecuta -> momentum pozitiv")
+        insights.append("Sentimentul s-a imbunatatit fata de saptamana trecuta - momentum pozitiv")
     elif fng_val < week_avg - 10:
-        insights.append("📉 Sentimentul s-a deteriorat fata de media saptamanii -> prudenta")
+        insights.append("Sentimentul s-a deteriorat fata de media saptamanii - prudenta")
     if cap_chg > 2:
-        insights.append("💹 Market cap-ul total creste cu volum -> trend bullish confirmat")
+        insights.append("Market cap-ul total creste - trend bullish confirmat")
     elif cap_chg < -2:
-        insights.append("📉 Scadere generalizata in piata -> risc crescut pe termen scurt")
+        insights.append("Scadere generalizata in piata - risc crescut pe termen scurt")
     if btc_dom > 58:
-        insights.append("🔶 BTC dominance ridicat -> altcoin-urile sufera, capital concentrat in BTC")
+        insights.append("BTC dominance ridicat - altcoin-urile sufera, capital concentrat in BTC")
     elif btc_dom < 42:
-        insights.append("🟣 BTC dominance scazut -> posibila altseason in desfasurare")
-    if fng_val <= 15:
-        insights.append("🚨 Panica extrema istorica -> zonele acestea au coincis cu fundul pietei in trecut")
+        insights.append("BTC dominance scazut - posibila altseason in desfasurare")
     if not insights:
-        insights.append("➡️ Piata este echilibrata momentan - niciun semnal extrem detectat")
+        insights.append("Piata este echilibrata momentan - niciun semnal extrem detectat")
     return "\n".join(["  " + i for i in insights[:3]])
 
 def format_stats(fg, global_data, prices):
@@ -530,49 +511,44 @@ def format_stats(fg, global_data, prices):
     fng_label = fg["label"]
     fng_trend = fng_val - fg["yesterday"]
     if fng_trend > 0:
-        trend_arrow = "↑ +" + str(fng_trend)
+        trend_arrow = "sus +" + str(fng_trend)
     elif fng_trend < 0:
-        trend_arrow = "↓ " + str(fng_trend)
+        trend_arrow = "jos " + str(fng_trend)
     else:
-        trend_arrow = "→ 0"
+        trend_arrow = "stabil"
     bar = fng_bar(fng_val)
 
     score, score_label = calc_market_score(fg, global_data, prices)
-    score_bar = "⭐" * score + "☆" * (10 - score)
+    score_bar = "X" * score + "." * (10 - score)
     insight   = generate_insight(fg, global_data, prices)
 
     cap_chg   = global_data.get("market_cap_change_24h", 0)
-    cap_arrow = "🟢 ▲" if cap_chg >= 0 else "🔴 ▼"
-    btc_arrow = "🟢 ▲" if prices.get("btc_change", 0) >= 0 else "🔴 ▼"
-    eth_arrow = "🟢 ▲" if prices.get("eth_change", 0) >= 0 else "🔴 ▼"
+    cap_arrow = "🟢" if cap_chg >= 0 else "🔴"
+    btc_arrow = "🟢" if prices.get("btc_change", 0) >= 0 else "🔴"
+    eth_arrow = "🟢" if prices.get("eth_change", 0) >= 0 else "🔴"
 
-    lines = [
-        "📊 *Market Stats* — " + now,
-        "━" * 22,
-        "",
-        "🧠 *SENTIMENT PIATA*",
-        fng_emoji(fng_val) + " Fear & Greed: *" + str(fng_val) + "/100* — _" + fng_label + "_",
-        "`[" + bar + "]`",
-        "• Fata de ieri: `" + trend_arrow + "`",
-        "• Media 7 zile: `" + str(fg["week_avg"]) + "/100`",
-        "• " + interpret_fng(fng_val),
-        "",
-        "💰 *OVERVIEW PIATA*",
-        "• BTC:  `" + fmt_price(prices.get("btc_price", 0)) + "`  " + btc_arrow + " `" + "{:.1f}%".format(abs(prices.get("btc_change", 0))) + "`",
-        "• ETH:  `" + fmt_price(prices.get("eth_price", 0)) + "`  " + eth_arrow + " `" + "{:.1f}%".format(abs(prices.get("eth_change", 0))) + "`",
-        "• Mkt Cap Total: `" + fmt_large(global_data.get("total_market_cap", 0)) + "`  " + cap_arrow + " `" + "{:.1f}%".format(abs(cap_chg)) + "`",
-        "• Volum 24h:     `" + fmt_large(global_data.get("total_volume_24h", 0)) + "`",
-        "• BTC Dominance: `" + str(global_data.get("btc_dominance", 0)) + "%`",
-        "• ETH Dominance: `" + str(global_data.get("eth_dominance", 0)) + "%`",
-        "",
-        "🧪 *INSIGHT AUTOMAT*",
-        insight,
-        "",
-        "⚡ *MARKET SCORE: " + str(score) + "/10 — " + score_label + "*",
-        "`" + score_bar + "`",
-        "_Bazat pe: sentiment + trend + volum + dominance_",
-    ]
-    return "\n".join(lines)
+    text = (
+        "Market Stats - " + now + "\n\n"
+        "SENTIMENT PIATA\n"
+        + fng_emoji(fng_val) + " Fear & Greed: " + str(fng_val) + "/100 - " + fng_label + "\n"
+        "[" + bar + "]\n"
+        "Fata de ieri: " + trend_arrow + "\n"
+        "Media 7 zile: " + str(fg["week_avg"]) + "/100\n"
+        + interpret_fng(fng_val) + "\n\n"
+        "OVERVIEW PIATA\n"
+        "BTC:  " + fmt_price(prices.get("btc_price", 0)) + "  " + btc_arrow + " " + "{:.1f}%".format(abs(prices.get("btc_change", 0))) + "\n"
+        "ETH:  " + fmt_price(prices.get("eth_price", 0)) + "  " + eth_arrow + " " + "{:.1f}%".format(abs(prices.get("eth_change", 0))) + "\n"
+        "Mkt Cap: " + fmt_large(global_data.get("total_market_cap", 0)) + "  " + cap_arrow + " " + "{:.1f}%".format(abs(cap_chg)) + "\n"
+        "Volum 24h: " + fmt_large(global_data.get("total_volume_24h", 0)) + "\n"
+        "BTC Dominance: " + str(global_data.get("btc_dominance", 0)) + "%\n"
+        "ETH Dominance: " + str(global_data.get("eth_dominance", 0)) + "%\n\n"
+        "INSIGHT AUTOMAT\n"
+        + insight + "\n\n"
+        "MARKET SCORE: " + str(score) + "/10 - " + score_label + "\n"
+        "[" + score_bar + "]\n"
+        "Bazat pe: sentiment + trend + volum + dominance"
+    )
+    return text
 
 # ─── FORMAT BUBBLES ────────────────────────────────────────────────────────────
 
@@ -587,12 +563,7 @@ def format_bubbles(coins, period):
     }.get(period, period)
 
     sorted_coins = sorted(coins, key=lambda c: float(c.get(period_key) or 0), reverse=True)
-
-    header = (
-        "🫧 *CryptoBubbles — " + period_label + "*\n"
-        + "_" + str(len(coins)) + " monede sortate dupa performanta_\n"
-        + "━" * 22 + "\n\n"
-    )
+    header = "CryptoBubbles - " + period_label + "\n" + str(len(coins)) + " monede sortate dupa performanta\n\n"
 
     lines = []
     for c in sorted_coins:
@@ -611,7 +582,7 @@ def format_bubbles(coins, period):
     for line in lines:
         if len(current) + len(line) > 3800:
             pages.append(current)
-            current = "🫧 *CryptoBubbles — " + period_label + "* _(continuare)_\n\n"
+            current = "CryptoBubbles - " + period_label + " (continuare)\n\n"
         current += line
     if current.strip():
         pages.append(current)
@@ -626,58 +597,53 @@ async def cmd_chatid(update, context):
 
 async def cmd_start(update, context):
     keyboard = [
-        [InlineKeyboardButton("📊 Top 10",      callback_data="top"),
-         InlineKeyboardButton("🔥 Trending",    callback_data="trending")],
-        [InlineKeyboardButton("🫧 Bubbles 24h", callback_data="bubbles:24h"),
-         InlineKeyboardButton("📊 Stats",       callback_data="stats")],
-        [InlineKeyboardButton("❓ Help",         callback_data="help")],
+        [InlineKeyboardButton("Top 10",      callback_data="top"),
+         InlineKeyboardButton("Trending",    callback_data="trending")],
+        [InlineKeyboardButton("Bubbles 24h", callback_data="bubbles:24h"),
+         InlineKeyboardButton("Stats",       callback_data="stats")],
+        [InlineKeyboardButton("Help",        callback_data="help")],
     ]
     await update.message.reply_text(
-        "👋 *Bun venit la CryptoBot!*\n\n"
-        "Date live din CoinGecko + TradingView.\n\n"
+        "Bun venit la CryptoBot!\n\n"
+        "Date live din CoinGecko.\n\n"
         "Comenzi:\n"
-        "• /price BTC\n"
-        "• /bubbles 24h\n"
-        "• /trending\n"
-        "• /stats\n"
-        "• /sector ai\n"
-        "• /alert BTC 70000\n",
-        parse_mode="Markdown",
+        "/price BTC\n"
+        "/bubbles 24h\n"
+        "/trending\n"
+        "/stats\n"
+        "/sector ai\n"
+        "/alert BTC 70000\n",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 async def cmd_help(update, context):
     text = (
-        "📖 *Comenzi disponibile*\n\n"
-        "/price `<coin>` — Pret live\n"
-        "  ex: `/price BTC` sau `/price bitcoin`\n\n"
-        "/top — Top 10 dupa market cap\n\n"
-        "/trending — Trending pe CoinGecko\n\n"
-        "/bubbles — Lista CryptoBubbles 24h\n"
-        "/bubbles `1h` `7d` `30d` `1y` — Alta perioada\n\n"
-        "/stats — Statistici piata + Market Score\n\n"
-        "/sector — Lista sectoare crypto\n"
-        "/sector `<nume>` — Ex: `/sector ai`\n\n"
-        "/alert `<coin> <pret>` — Alerta de pret\n"
-        "  ex: `/alert BTC 70000`\n\n"
-        "/myalerts — Alertele tale active\n\n"
-        "/removealert `<numar>` — Sterge alerta\n\n"
-        "/help — Acest mesaj\n"
+        "Comenzi disponibile:\n\n"
+        "/price <coin> - Pret live\n"
+        "/top - Top 10 dupa market cap\n"
+        "/trending - Trending pe CoinGecko\n"
+        "/bubbles - Lista CryptoBubbles 24h\n"
+        "/bubbles 1h/7d/30d/1y - Alta perioada\n"
+        "/stats - Statistici piata\n"
+        "/sector - Lista sectoare\n"
+        "/sector <nume> - Ex: /sector ai\n"
+        "/alert <coin> <pret> - Alerta de pret\n"
+        "/myalerts - Alertele tale\n"
+        "/removealert <numar> - Sterge alerta\n"
+        "/help - Acest mesaj\n"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text)
 
 async def cmd_price(update, context):
     if not context.args:
-        await update.message.reply_text("Folosire: `/price BTC`", parse_mode="Markdown")
+        await update.message.reply_text("Folosire: /price BTC")
         return
     query = " ".join(context.args)
-    await update.message.reply_text("⏳ Se incarca datele...")
+    await update.message.reply_text("Se incarca datele...")
     slug = resolve_slug(query)
     data = get_coin_data(slug)
     if not data:
-        await update.message.reply_text(
-            "❌ *" + query.upper() + "* nu a fost gasit.\nIncearca: `/price BTC`, `/price ETH`",
-            parse_mode="Markdown")
+        await update.message.reply_text(query.upper() + " nu a fost gasit.")
         return
     text = (
         data["name"] + " (" + data["symbol"] + ")  Rank #" + str(data["rank"]) + "\n\n"
@@ -691,35 +657,31 @@ async def cmd_price(update, context):
         "Mkt Cap:   " + fmt_large(data["market_cap"]) + "\n"
         "Volum 24h: " + fmt_large(data["volume_24h"]) + "\n"
     )
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="price:" + slug)]]
-    await update.message.reply_text(text, parse_mode="Markdown",
-                                    reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard = [[InlineKeyboardButton("Refresh", callback_data="price:" + slug)]]
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_top(update, context):
-    await update.message.reply_text("⏳ Se incarca top 10...")
+    await update.message.reply_text("Se incarca top 10...")
     coins = get_top_coins(10)
     if not coins:
-        await update.message.reply_text("❌ Nu s-au putut obtine datele.")
+        await update.message.reply_text("Nu s-au putut obtine datele.")
         return
-    lines = ["*🏆 Top 10 dupa Market Cap*\n"]
+    lines = ["Top 10 dupa Market Cap\n"]
     for i, c in enumerate(coins, 1):
         chg   = c.get("change_24h") or 0
-        arrow = "▲" if chg >= 0 else "▼"
-        lines.append(
-            str(i) + ". *" + c["symbol"] + "* — " + fmt_price(c["price"]) + "  "
-            + ("🟢" if chg >= 0 else "🔴") + " " + arrow + "{:.1f}%".format(abs(chg))
-        )
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="top")]]
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown",
-                                    reply_markup=InlineKeyboardMarkup(keyboard))
+        arrow = "+" if chg >= 0 else ""
+        emoji = "🟢" if chg >= 0 else "🔴"
+        lines.append(str(i) + ". " + c["symbol"] + " - " + fmt_price(c["price"]) + "  " + emoji + " " + arrow + "{:.1f}%".format(chg))
+    keyboard = [[InlineKeyboardButton("Refresh", callback_data="top")]]
+    await update.message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_trending(update, context):
-    await update.message.reply_text("⏳ Se incarca trending...")
+    await update.message.reply_text("Se incarca trending...")
     coins = get_trending_coins()
     if not coins:
-        await update.message.reply_text("❌ Nu s-au putut obtine datele.")
+        await update.message.reply_text("Nu s-au putut obtine datele.")
         return
-    lines = ["*🔥 Trending pe CoinGecko*\n"]
+    lines = ["Trending pe CoinGecko\n"]
     for item in coins[:7]:
         c         = item["item"]
         rank      = c.get("market_cap_rank", "?")
@@ -727,22 +689,19 @@ async def cmd_trending(update, context):
         chg_emoji = "🟢" if chg >= 0 else "🔴"
         sign      = "+" if chg >= 0 else ""
         lines.append("• " + c["name"] + " (" + c["symbol"] + ")  Rank #" + str(rank) + "  " + chg_emoji + " " + sign + "{:.1f}%".format(chg))
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown",
-                                    reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard = [[InlineKeyboardButton("Refresh", callback_data="trending")]]
+    await update.message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_bubbles(update, context):
     valid = ["1h", "24h", "7d", "30d", "1y"]
     period = context.args[0].lower() if context.args else "24h"
     if period not in valid:
-        await update.message.reply_text(
-            "Folosire: `/bubbles 24h`\nOptiuni: `1h`, `24h`, `7d`, `30d`, `1y`",
-            parse_mode="Markdown")
+        await update.message.reply_text("Folosire: /bubbles 24h\nOptiuni: 1h, 24h, 7d, 30d, 1y")
         return
-    await update.message.reply_text("⏳ Se incarca CryptoBubbles (" + period + ")...")
+    await update.message.reply_text("Se incarca CryptoBubbles (" + period + ")...")
     coins = get_bubbles_data(period)
     if not coins:
-        await update.message.reply_text("❌ Nu s-au putut obtine datele.")
+        await update.message.reply_text("Nu s-au putut obtine datele.")
         return
     pages = format_bubbles(coins, period)
     keyboard = [[
@@ -754,13 +713,12 @@ async def cmd_bubbles(update, context):
     ]]
     for i, page in enumerate(pages):
         if i == 0:
-            await update.message.reply_text(page, parse_mode="Markdown",
-                                            reply_markup=InlineKeyboardMarkup(keyboard))
+            await update.message.reply_text(page, reply_markup=InlineKeyboardMarkup(keyboard))
         else:
-            await update.message.reply_text(page, parse_mode="Markdown")
+            await update.message.reply_text(page)
 
 async def cmd_stats(update, context):
-    msg = await update.message.reply_text("⏳ Se calculeaza statisticile pietei...")
+    msg = await update.message.reply_text("Se calculeaza statisticile pietei...")
     fg = global_data = prices = None
     for attempt in range(3):
         if attempt > 0:
@@ -773,30 +731,29 @@ async def cmd_stats(update, context):
         if fg and global_data and prices:
             break
     if not fg or not global_data or not prices:
-        await msg.edit_text("❌ Nu s-au putut obtine datele. Incearca din nou in 1 minut.")
+        await msg.edit_text("Nu s-au putut obtine datele. Incearca din nou in 1 minut.")
         return
     text = format_stats(fg, global_data, prices)
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
-    await msg.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard = [[InlineKeyboardButton("Refresh", callback_data="stats")]]
+    await msg.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_sector(update, context):
     if not context.args:
         lines = ["Sectoare disponibile:\n"]
         for key, (_, label) in SECTORS.items():
-            lines.append("• /sector " + key + " — " + label)
+            lines.append("• /sector " + key + " - " + label)
         lines.append("\nEx: /sector ai")
         await update.message.reply_text("\n".join(lines))
         return
     key = context.args[0].lower()
     if key not in SECTORS:
-        keys = ", ".join(["`" + k + "`" for k in SECTORS.keys()])
-        await update.message.reply_text("❌ Sector necunoscut. Disponibile:\n" + keys, parse_mode="Markdown")
+        await update.message.reply_text("Sector necunoscut. Scrie /sector pentru lista.")
         return
     category_id, label = SECTORS[key]
-    await update.message.reply_text("⏳ Se incarca sectorul " + label + "...")
+    await update.message.reply_text("Se incarca sectorul " + label + "...")
     coins = get_sector_coins(category_id)
     if not coins:
-        await update.message.reply_text("❌ Nu s-au putut obtine datele. Incearca din nou.")
+        await update.message.reply_text("Nu s-au putut obtine datele. Incearca din nou.")
         return
     lines = [label + " - Top " + str(len(coins)) + " dupa market cap\n"]
     for c in coins:
@@ -804,24 +761,23 @@ async def cmd_sector(update, context):
         chg_emoji = "🟢" if chg >= 0 else "🔴"
         sign      = "+" if chg >= 0 else ""
         lines.append(c["symbol"] + " #" + str(c["rank"]) + "  " + fmt_price(c["price"]) + "  " + chg_emoji + " " + sign + "{:.1f}%".format(chg))
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="sector:" + key)]]
-    await update.message.reply_text("\n".join(lines),
-                                    reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard = [[InlineKeyboardButton("Refresh", callback_data="sector:" + key)]]
+    await update.message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_alert(update, context):
     if len(context.args) < 2:
-        await update.message.reply_text("Folosire: `/alert BTC 70000`", parse_mode="Markdown")
+        await update.message.reply_text("Folosire: /alert BTC 70000")
         return
     query = context.args[0]
     try:
         target = float(context.args[1].replace(",", ""))
     except ValueError:
-        await update.message.reply_text("❌ Pret invalid.", parse_mode="Markdown")
+        await update.message.reply_text("Pret invalid.")
         return
     slug = resolve_slug(query)
     data = get_coin_data(slug)
     if not data:
-        await update.message.reply_text("❌ *" + query.upper() + "* nu a fost gasit.", parse_mode="Markdown")
+        await update.message.reply_text(query.upper() + " nu a fost gasit.")
         return
     current   = data["price"]
     direction = "above" if target > current else "below"
@@ -833,11 +789,10 @@ async def cmd_alert(update, context):
         "name": data["name"], "target": target, "direction": direction,
     })
     save_alerts()
-    arrow = "📈 creste pana la" if direction == "above" else "📉 scade pana la"
+    arrow = "creste pana la" if direction == "above" else "scade pana la"
     await update.message.reply_text(
-        "✅ Alerta setata: *" + data["name"] + "* " + arrow + " " + fmt_price(target) + "\n"
-        "_(Pret curent: " + fmt_price(current) + ")_",
-        parse_mode="Markdown")
+        "Alerta setata: " + data["name"] + " " + arrow + " " + fmt_price(target) + "\n"
+        "(Pret curent: " + fmt_price(current) + ")")
 
 async def cmd_myalerts(update, context):
     uid    = update.effective_user.id
@@ -845,12 +800,12 @@ async def cmd_myalerts(update, context):
     if not alerts:
         await update.message.reply_text("Nu ai alerte active. Foloseste /alert.")
         return
-    lines = ["*Alertele tale*\n"]
+    lines = ["Alertele tale:\n"]
     for i, a in enumerate(alerts, 1):
-        arrow = "▲" if a["direction"] == "above" else "▼"
-        lines.append(str(i) + ". *" + a["name"] + "* (" + a["symbol"] + ") " + arrow + " " + fmt_price(a["target"]))
-    lines.append("\nFoloseste `/removealert <numar>` pentru a sterge.")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        arrow = "sus" if a["direction"] == "above" else "jos"
+        lines.append(str(i) + ". " + a["name"] + " (" + a["symbol"] + ") " + arrow + " " + fmt_price(a["target"]))
+    lines.append("\nFoloseste /removealert <numar> pentru a sterge.")
+    await update.message.reply_text("\n".join(lines))
 
 async def cmd_removealert(update, context):
     uid    = update.effective_user.id
@@ -859,17 +814,15 @@ async def cmd_removealert(update, context):
         await update.message.reply_text("Nu ai alerte de sters.")
         return
     if not context.args:
-        await update.message.reply_text("Folosire: `/removealert 1`", parse_mode="Markdown")
+        await update.message.reply_text("Folosire: /removealert 1")
         return
     try:
         n       = int(context.args[0])
         removed = alerts.pop(n - 1)
         save_alerts()
-        await update.message.reply_text(
-            "🗑 Alerta stearsa: *" + removed["name"] + "* @ " + fmt_price(removed["target"]),
-            parse_mode="Markdown")
+        await update.message.reply_text("Alerta stearsa: " + removed["name"] + " @ " + fmt_price(removed["target"]))
     except (ValueError, IndexError):
-        await update.message.reply_text("❌ Numar invalid. Foloseste /myalerts.")
+        await update.message.reply_text("Numar invalid. Foloseste /myalerts.")
 
 # ─── INLINE BUTTON CALLBACKS ───────────────────────────────────────────────────
 
@@ -881,26 +834,25 @@ async def button_callback(update, context):
     if data == "top":
         coins = get_top_coins(10)
         if not coins:
-            await query.edit_message_text("❌ Nu s-au putut obtine datele.")
+            await query.edit_message_text("Nu s-au putut obtine datele.")
             return
-        lines = ["*🏆 Top 10 dupa Market Cap*\n"]
+        lines = ["Top 10 dupa Market Cap\n"]
         for i, c in enumerate(coins, 1):
             chg   = c.get("change_24h") or 0
-            arrow = "▲" if chg >= 0 else "▼"
-            lines.append(str(i) + ". *" + c["symbol"] + "* — " + fmt_price(c["price"]) + "  " + ("🟢" if chg >= 0 else "🔴") + " " + arrow + "{:.1f}%".format(abs(chg)))
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="top")]]
-        await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
+            arrow = "+" if chg >= 0 else ""
+            emoji = "🟢" if chg >= 0 else "🔴"
+            lines.append(str(i) + ". " + c["symbol"] + " - " + fmt_price(c["price"]) + "  " + emoji + " " + arrow + "{:.1f}%".format(chg))
+        keyboard = [[InlineKeyboardButton("Refresh", callback_data="top")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "trending":
-        # Sterge cache pentru a obtine date proaspete cu procente
         if "trending" in _cache:
             del _cache["trending"]
         coins = get_trending_coins()
         if not coins:
-            await query.edit_message_text("❌ Nu s-au putut obtine datele.")
+            await query.edit_message_text("Nu s-au putut obtine datele.")
             return
-        lines = ["*🔥 Trending pe CoinGecko*\n"]
+        lines = ["Trending pe CoinGecko\n"]
         for item in coins[:7]:
             c         = item["item"]
             rank      = c.get("market_cap_rank", "?")
@@ -908,16 +860,15 @@ async def button_callback(update, context):
             chg_emoji = "🟢" if chg >= 0 else "🔴"
             sign      = "+" if chg >= 0 else ""
             lines.append("• " + c["name"] + " (" + c["symbol"] + ")  Rank #" + str(rank) + "  " + chg_emoji + " " + sign + "{:.1f}%".format(chg))
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
-        await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("Refresh", callback_data="trending")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("bubbles:"):
         period = data.split(":", 1)[1]
-        await query.edit_message_text("⏳ Se incarca CryptoBubbles (" + period + ")...", parse_mode="Markdown")
+        await query.edit_message_text("Se incarca CryptoBubbles (" + period + ")...")
         coins = get_bubbles_data(period)
         if not coins:
-            await query.edit_message_text("❌ Nu s-au putut obtine datele.")
+            await query.edit_message_text("Nu s-au putut obtine datele.")
             return
         pages = format_bubbles(coins, period)
         keyboard = [[
@@ -927,10 +878,9 @@ async def button_callback(update, context):
             InlineKeyboardButton("30d", callback_data="bubbles:30d"),
             InlineKeyboardButton("1y",  callback_data="bubbles:1y"),
         ]]
-        await query.edit_message_text(pages[0], parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(pages[0], reply_markup=InlineKeyboardMarkup(keyboard))
         for page in pages[1:]:
-            await query.message.reply_text(page, parse_mode="Markdown")
+            await query.message.reply_text(page)
 
     elif data == "stats":
         fg = global_data = prices = None
@@ -945,12 +895,11 @@ async def button_callback(update, context):
             if fg and global_data and prices:
                 break
         if not fg or not global_data or not prices:
-            await query.edit_message_text("❌ Nu s-au putut obtine datele. Incearca in 1 minut.")
+            await query.edit_message_text("Nu s-au putut obtine datele. Incearca in 1 minut.")
             return
         text = format_stats(fg, global_data, prices)
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
-        await query.edit_message_text(text, parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("Refresh", callback_data="stats")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("sector:"):
         key = data.split(":", 1)[1]
@@ -960,7 +909,7 @@ async def button_callback(update, context):
         category_id, label = SECTORS[key]
         coins = get_sector_coins(category_id)
         if not coins:
-            await query.edit_message_text("❌ Nu s-au putut obtine datele.")
+            await query.edit_message_text("Nu s-au putut obtine datele.")
             return
         lines = [label + " - Top " + str(len(coins)) + " dupa market cap\n"]
         for c in coins:
@@ -968,15 +917,14 @@ async def button_callback(update, context):
             chg_emoji = "🟢" if chg >= 0 else "🔴"
             sign      = "+" if chg >= 0 else ""
             lines.append(c["symbol"] + " #" + str(c["rank"]) + "  " + fmt_price(c["price"]) + "  " + chg_emoji + " " + sign + "{:.1f}%".format(chg))
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="sector:" + key)]]
-        await query.edit_message_text("\n".join(lines),
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("Refresh", callback_data="sector:" + key)]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("price:"):
         slug = data.split(":", 1)[1]
         info = get_coin_data(slug)
         if not info:
-            await query.edit_message_text("❌ Nu s-au putut obtine datele.")
+            await query.edit_message_text("Nu s-au putut obtine datele.")
             return
         text = (
             info["name"] + " (" + info["symbol"] + ")  Rank #" + str(info["rank"]) + "\n\n"
@@ -990,24 +938,23 @@ async def button_callback(update, context):
             "Mkt Cap:   " + fmt_large(info["market_cap"]) + "\n"
             "Volum 24h: " + fmt_large(info["volume_24h"]) + "\n"
         )
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="price:" + slug)]]
-        await query.edit_message_text(text, parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("Refresh", callback_data="price:" + slug)]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "help":
         text = (
-            "📖 *Comenzi disponibile*\n\n"
-            "/price `<coin>` — Pret live\n"
-            "/top — Top 10 monede\n"
-            "/trending — Trending CoinGecko\n"
-            "/bubbles `<perioada>` — CryptoBubbles\n"
-            "/stats — Statistici piata\n"
-            "/sector `<nume>` — Monede sector\n"
-            "/alert `<coin> <pret>` — Alerta pret\n"
-            "/myalerts — Alertele tale\n"
-            "/removealert `<numar>` — Sterge alerta\n"
+            "Comenzi disponibile:\n\n"
+            "/price <coin> - Pret live\n"
+            "/top - Top 10 monede\n"
+            "/trending - Trending CoinGecko\n"
+            "/bubbles <perioada> - CryptoBubbles\n"
+            "/stats - Statistici piata\n"
+            "/sector <nume> - Monede sector\n"
+            "/alert <coin> <pret> - Alerta pret\n"
+            "/myalerts - Alertele tale\n"
+            "/removealert <numar> - Sterge alerta\n"
         )
-        await query.edit_message_text(text, parse_mode="Markdown")
+        await query.edit_message_text(text)
 
 # ─── BACKGROUND JOBS ───────────────────────────────────────────────────────────
 
@@ -1030,11 +977,10 @@ async def check_alerts(context):
                     await context.bot.send_message(
                         chat_id=uid,
                         text=(
-                            "🔔 *Alerta de pret activata!*\n\n"
-                            "*" + alert["name"] + "* (" + alert["symbol"] + ") a " + verb + " " + fmt_price(current) + "\n"
+                            "Alerta de pret activata!\n\n"
+                            + alert["name"] + " (" + alert["symbol"] + ") a " + verb + " " + fmt_price(current) + "\n"
                             "Tinta ta era: " + fmt_price(target)
                         ),
-                        parse_mode="Markdown",
                     )
                 except Exception as e:
                     logger.error("Alert send failed: " + str(e))
@@ -1060,10 +1006,9 @@ async def auto_stats_job(context):
         if not fg or not global_data or not prices:
             return
         text = format_stats(fg, global_data, prices)
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
+        keyboard = [[InlineKeyboardButton("Refresh", callback_data="stats")]]
         await context.bot.send_message(
             chat_id=GROUP_CHAT_ID, text=text,
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
         logger.error("auto_stats_job error: " + str(e))
@@ -1073,7 +1018,7 @@ async def auto_trending_job(context):
         coins = get_trending_coins()
         if not coins:
             return
-        lines = ["*🔥 Trending pe CoinGecko*\n"]
+        lines = ["Trending pe CoinGecko\n"]
         for item in coins[:7]:
             c         = item["item"]
             rank      = c.get("market_cap_rank", "?")
@@ -1081,11 +1026,10 @@ async def auto_trending_job(context):
             chg_emoji = "🟢" if chg >= 0 else "🔴"
             sign      = "+" if chg >= 0 else ""
             lines.append("• " + c["name"] + " (" + c["symbol"] + ")  Rank #" + str(rank) + "  " + chg_emoji + " " + sign + "{:.1f}%".format(chg))
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
+        keyboard = [[InlineKeyboardButton("Refresh", callback_data="trending")]]
         await context.bot.send_message(
             chat_id=GROUP_CHAT_ID,
             text="\n".join(lines),
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
         logger.error("auto_trending_job error: " + str(e))
@@ -1103,15 +1047,17 @@ async def pump_alert_job(context):
             "price_change_percentage": "24h,7d,30d",
         }, timeout=30)
         if not data:
+            logger.warning("pump_alert_job: no data from CoinGecko")
             return
         now = time.time()
+        alerts_sent = 0
         for c in data:
             symbol = c.get("symbol", "").upper()
             price  = c.get("current_price", 0)
             periods = {
-                "24h": c.get("price_change_percentage_24h") or 0,
-                "7D":  c.get("price_change_percentage_7d_in_currency") or 0,
-                "30D": c.get("price_change_percentage_30d_in_currency") or 0,
+                "24h": float(c.get("price_change_percentage_24h") or 0),
+                "7D":  float(c.get("price_change_percentage_7d_in_currency") or 0),
+                "30D": float(c.get("price_change_percentage_30d_in_currency") or 0),
             }
             for period_label, chg in periods.items():
                 if chg < PUMP_THRESHOLD:
@@ -1122,29 +1068,24 @@ async def pump_alert_job(context):
                     continue
                 _pump_alerts_sent[alert_key] = now
                 text = (
-                    "🚀 *PUMP ALERT — " + symbol + "*\n"
-                    "━" * 18 + "\n"
-                    "💰 Pret curent: `" + fmt_price(price) + "`\n"
-                    "📈 Crestere " + period_label + ": *+" + "{:.1f}%".format(chg) + "* 🟢\n\n"
-                    "⚠️ _Acesta nu este sfat financiar._"
+                    "PUMP ALERT - " + symbol + "\n\n"
+                    "Pret curent: " + fmt_price(price) + "\n"
+                    "Crestere " + period_label + ": +" + "{:.1f}%".format(chg) + "\n\n"
+                    "Acesta nu este sfat financiar."
                 )
                 try:
-                    await context.bot.send_message(
-                        chat_id=GROUP_CHAT_ID,
-                        text=text,
-                        parse_mode="Markdown")
+                    await context.bot.send_message(chat_id=GROUP_CHAT_ID, text=text)
+                    alerts_sent += 1
+                    logger.info("Pump alert trimis: " + symbol + " " + period_label + " +" + "{:.1f}%".format(chg))
                 except Exception as e:
                     logger.error("pump_alert send error: " + str(e))
+        logger.info("pump_alert_job finalizat. Alerte trimise: " + str(alerts_sent))
     except Exception as e:
         logger.error("pump_alert_job error: " + str(e))
 
-
 async def cmd_test_auto(update, context):
-    """Trimite imediat stats si trending in chat-ul curent pentru testare."""
     chat_id = update.effective_chat.id
-    await update.message.reply_text("⏳ Se trimit mesajele de test...")
-
-    # Stats
+    await update.message.reply_text("Se trimit mesajele de test...")
     try:
         fg = global_data = prices = None
         for attempt in range(3):
@@ -1159,19 +1100,15 @@ async def cmd_test_auto(update, context):
                 break
         if fg and global_data and prices:
             text = format_stats(fg, global_data, prices)
-            keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
-            await context.bot.send_message(
-                chat_id=chat_id, text=text,
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup(keyboard))
+            keyboard = [[InlineKeyboardButton("Refresh", callback_data="stats")]]
+            await context.bot.send_message(chat_id=chat_id, text=text,
+                                           reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
         await update.message.reply_text("Eroare stats: " + str(e))
-
-    # Trending
     try:
         coins = get_trending_coins()
         if coins:
-            lines = ["*Trending pe CoinGecko*\n"]
+            lines = ["Trending pe CoinGecko\n"]
             for item in coins[:7]:
                 c         = item["item"]
                 rank      = c.get("market_cap_rank", "?")
@@ -1179,16 +1116,12 @@ async def cmd_test_auto(update, context):
                 chg_emoji = "🟢" if chg >= 0 else "🔴"
                 sign      = "+" if chg >= 0 else ""
                 lines.append("• " + c["name"] + " (" + c["symbol"] + ")  Rank #" + str(rank) + "  " + chg_emoji + " " + sign + "{:.1f}%".format(chg))
-            keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="\n".join(lines),
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup(keyboard))
+            keyboard = [[InlineKeyboardButton("Refresh", callback_data="trending")]]
+            await context.bot.send_message(chat_id=chat_id, text="\n".join(lines),
+                                           reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
         await update.message.reply_text("Eroare trending: " + str(e))
-
-    await update.message.reply_text("✅ Test finalizat!")
+    await update.message.reply_text("Test finalizat!")
 
 # ─── MAIN ──────────────────────────────────────────────────────────────────────
 
@@ -1207,7 +1140,7 @@ def main():
     app.add_handler(CommandHandler("alert",       cmd_alert))
     app.add_handler(CommandHandler("myalerts",    cmd_myalerts))
     app.add_handler(CommandHandler("removealert", cmd_removealert))
-    #app.add_handler(CommandHandler("test_auto",   cmd_test_auto))  # Dezactiveaza dupa testare
+    # app.add_handler(CommandHandler("test_auto", cmd_test_auto))
     app.add_handler(CallbackQueryHandler(button_callback))
 
     app.job_queue.run_repeating(check_alerts,   interval=CHECK_ALERTS_INTERVAL, first=10)
