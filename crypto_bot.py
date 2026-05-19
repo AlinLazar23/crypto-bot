@@ -287,43 +287,45 @@ def resolve_slug(query: str) -> str | None:
 # ─── DATE COINGECKO ────────────────────────────────────────────────────────────
 
 def get_coin_data(slug: str) -> dict | None:
-    try:
-        r = requests.get(
-            f"{COINGECKO_BASE}/coins/markets",
-            params={
-                "vs_currency": "usd",
-                "ids": slug,
-                "sparkline": "false",
-                "price_change_percentage": "1h,24h,7d,30d,1y",
-            },
-            timeout=10,
-        )
-        if r.status_code != 200:
-            logger.error(f"get_coin_data HTTP {r.status_code} for {slug}")
-            return None
-        data = r.json()
-        if not data:
-            return None
-        c = data[0]
-        return {
-            "slug":       c["id"],
-            "symbol":     c["symbol"].upper(),
-            "name":       c["name"],
-            "rank":       c.get("market_cap_rank") or "N/A",
-            "price":      c.get("current_price") or 0,
-            "change_1h":  c.get("price_change_percentage_1h_in_currency") or 0,
-            "change_24h": c.get("price_change_percentage_24h_in_currency")
-                          or c.get("price_change_percentage_24h") or 0,
-            "change_7d":  c.get("price_change_percentage_7d_in_currency") or 0,
-            "change_30d": c.get("price_change_percentage_30d_in_currency") or 0,
-            "change_1y":  c.get("price_change_percentage_1y_in_currency") or 0,
-            "high_24h":   c.get("high_24h") or 0,
-            "low_24h":    c.get("low_24h") or 0,
-            "market_cap": c.get("market_cap") or 0,
-            "volume_24h": c.get("total_volume") or 0,
-        }
-    except Exception as e:
-        logger.error(f"get_coin_data error ({slug}): {e}")
+    for attempt in range(3):
+        if attempt > 0:
+            time.sleep(2)
+        try:
+            r = requests.get(
+                f"{COINGECKO_BASE}/coins/markets",
+                params={
+                    "vs_currency": "usd",
+                    "ids": slug,
+                    "sparkline": "false",
+                    "price_change_percentage": "1h,24h,7d,30d,1y",
+                },
+                timeout=10,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                if not data:
+                    return None
+                c = data[0]
+                return {
+                    "slug":       c["id"],
+                    "symbol":     c["symbol"].upper(),
+                    "name":       c["name"],
+                    "rank":       c.get("market_cap_rank") or "N/A",
+                    "price":      c.get("current_price") or 0,
+                    "change_1h":  c.get("price_change_percentage_1h_in_currency") or 0,
+                    "change_24h": c.get("price_change_percentage_24h_in_currency")
+                                  or c.get("price_change_percentage_24h") or 0,
+                    "change_7d":  c.get("price_change_percentage_7d_in_currency") or 0,
+                    "change_30d": c.get("price_change_percentage_30d_in_currency") or 0,
+                    "change_1y":  c.get("price_change_percentage_1y_in_currency") or 0,
+                    "high_24h":   c.get("high_24h") or 0,
+                    "low_24h":    c.get("low_24h") or 0,
+                    "market_cap": c.get("market_cap") or 0,
+                    "volume_24h": c.get("total_volume") or 0,
+                }
+            logger.warning(f"get_coin_data HTTP {r.status_code} pentru {slug} (attempt {attempt + 1})")
+        except Exception as e:
+            logger.error(f"get_coin_data error ({slug}): {e}")
     return None
 
 def get_top_coins(limit: int = 10) -> list[dict]:
@@ -476,15 +478,23 @@ def get_ta_analysis(slug: str) -> dict | None:
     cached    = cache_get(cache_key)
     if cached is not None:
         return cached
+    for attempt in range(3):
+        if attempt > 0:
+            time.sleep(2)
+        try:
+            r = requests.get(
+                f"{COINGECKO_BASE}/coins/{slug}/ohlc",
+                params={"vs_currency": "usd", "days": 365},
+                timeout=15,
+            )
+            if r.status_code == 200:
+                break
+            logger.warning(f"get_ta_analysis HTTP {r.status_code} pentru {slug} (attempt {attempt + 1})")
+        except Exception as e:
+            logger.error(f"get_ta_analysis error ({slug}): {e}")
+    else:
+        return None
     try:
-        r = requests.get(
-            f"{COINGECKO_BASE}/coins/{slug}/ohlc",
-            params={"vs_currency": "usd", "days": 365},
-            timeout=15,
-        )
-        if r.status_code != 200:
-            logger.warning(f"get_ta_analysis HTTP {r.status_code} pentru {slug}")
-            return None
         candles = r.json()
         if len(candles) < 30:
             return None
@@ -1040,10 +1050,11 @@ async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("❌ Preț invalid.", parse_mode="Markdown")
         return
+    msg  = await update.message.reply_text(f"⏳ Se caută *{query.upper()}*...", parse_mode="Markdown")
     slug = resolve_slug(query)
     data = get_coin_data(slug) if slug else None
     if not data:
-        await update.message.reply_text(f"❌ *{query.upper()}* nu a fost găsit.", parse_mode="Markdown")
+        await msg.edit_text(f"❌ *{query.upper()}* nu a fost găsit.", parse_mode="Markdown")
         return
     current   = data["price"]
     direction = "above" if target > current else "below"
@@ -1056,7 +1067,7 @@ async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     })
     save_alerts()
     arrow = "📈 crește până la" if direction == "above" else "📉 scade până la"
-    await update.message.reply_text(
+    await msg.edit_text(
         f"✅ Alertă setată: *{data['name']}* {arrow} {fmt_price(target)}\n"
         f"_(Preț curent: {fmt_price(current)})_\n"
         f"_Notificarea va apărea în topicul Predicții._",
