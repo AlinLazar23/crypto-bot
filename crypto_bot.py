@@ -33,7 +33,6 @@ Commands:
     /top             - Top 10 după market cap
     /trending        - Trending CoinGecko
     /bubbles         - Lista CryptoBubbles (1h/24h/7d/30d/1y)
-    /analiza BTC     - Analiză tehnică TradingView
     /stats           - Statistici piață + Market Score
     /alert BTC 70000 - Alertă de preț
     /myalerts        - Alertele tale
@@ -433,146 +432,6 @@ def get_crypto_news(limit: int = 5) -> list[dict]:
         logger.error(f"get_crypto_news error: {e}")
     return []
 
-# ─── TA ENGINE (CoinGecko OHLC, fără dependențe externe) ──────────────────────
-
-def _ema_series(data: list[float], period: int) -> list[float]:
-    if len(data) < period:
-        return []
-    k   = 2.0 / (period + 1)
-    ema = sum(data[:period]) / period
-    out = [ema]
-    for v in data[period:]:
-        ema = v * k + ema * (1 - k)
-        out.append(ema)
-    return out
-
-def _rsi(closes: list[float], period: int = 14) -> float | None:
-    if len(closes) < period + 1:
-        return None
-    deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
-    gains  = [max(d, 0.0) for d in deltas]
-    losses = [max(-d, 0.0) for d in deltas]
-    avg_g  = sum(gains[:period]) / period
-    avg_l  = sum(losses[:period]) / period
-    for g, l in zip(gains[period:], losses[period:]):
-        avg_g = (avg_g * (period - 1) + g) / period
-        avg_l = (avg_l * (period - 1) + l) / period
-    if avg_l == 0:
-        return 100.0
-    return round(100 - 100 / (1 + avg_g / avg_l), 2)
-
-def _macd(closes: list[float]) -> tuple[float | None, float | None]:
-    s12 = _ema_series(closes, 12)
-    s26 = _ema_series(closes, 26)
-    if len(s12) < 9 or len(s26) < 9:
-        return None, None
-    diff   = len(s12) - len(s26)
-    macd_l = [s12[diff + i] - s26[i] for i in range(len(s26))]
-    sig    = _ema_series(macd_l, 9)
-    if not sig:
-        return None, None
-    return round(macd_l[-1], 8), round(sig[-1], 8)
-
-# Cache permanent pentru ultimul rezultat TA cunoscut (nu expiră niciodată)
-_ta_stale: dict[str, dict] = {}
-
-def _fetch_closes(slug: str) -> list[float]:
-    """Încearcă market_chart (zilnic), fallback pe ohlc (4h). Returnează lista de close-uri."""
-    # Sursă 1: market_chart 365 zile → ~365 prețuri zilnice
-    for attempt in range(3):
-        if attempt > 0:
-            time.sleep(2)
-        try:
-            r = requests.get(
-                f"{COINGECKO_BASE}/coins/{slug}/market_chart",
-                params={"vs_currency": "usd", "days": 365},
-                timeout=15,
-            )
-            if r.status_code == 200:
-                closes = [p[1] for p in r.json().get("prices", [])]
-                if len(closes) >= 30:
-                    return closes
-        except Exception as e:
-            logger.warning(f"_fetch_closes market_chart error ({slug}): {e}")
-
-    # Sursă 2: ohlc 90 zile → ~540 lumânări de 4h
-    for attempt in range(2):
-        if attempt > 0:
-            time.sleep(2)
-        try:
-            r = requests.get(
-                f"{COINGECKO_BASE}/coins/{slug}/ohlc",
-                params={"vs_currency": "usd", "days": 90},
-                timeout=15,
-            )
-            if r.status_code == 200:
-                closes = [c[4] for c in r.json()]
-                if len(closes) >= 30:
-                    return closes
-        except Exception as e:
-            logger.warning(f"_fetch_closes ohlc error ({slug}): {e}")
-
-    return []
-
-def _compute_ta(closes: list[float]) -> dict:
-    current    = closes[-1]
-    rsi        = _rsi(closes)
-    ema20_s    = _ema_series(closes, 20)
-    ema50_s    = _ema_series(closes, 50)
-    ema200_s   = _ema_series(closes, 200)
-    macd, msig = _macd(closes)
-    ema20  = round(ema20_s[-1],  8) if ema20_s  else None
-    ema50  = round(ema50_s[-1],  8) if ema50_s  else None
-    ema200 = round(ema200_s[-1], 8) if ema200_s else None
-
-    buys = sells = 0
-    if rsi is not None:
-        if rsi < 30:   buys  += 1
-        elif rsi > 70: sells += 1
-    if macd is not None and msig is not None:
-        if macd > msig: buys  += 1
-        else:           sells += 1
-    for ema in (ema20, ema50, ema200):
-        if ema:
-            if current > ema: buys  += 1
-            else:             sells += 1
-
-    total = buys + sells or 1
-    if   buys / total >= 0.7:  rec = "STRONG_BUY"
-    elif buys / total >= 0.5:  rec = "BUY"
-    elif sells / total >= 0.7: rec = "STRONG_SELL"
-    elif sells / total >= 0.5: rec = "SELL"
-    else:                      rec = "NEUTRAL"
-
-    return {
-        "recommendation": rec,
-        "buy": buys, "sell": sells, "neutral": max(0, 5 - buys - sells),
-        "rsi": rsi, "macd": macd, "macd_signal": msig,
-        "ema20": ema20, "ema50": ema50, "ema200": ema200,
-        "close": current,
-    }
-
-def get_ta_analysis(slug: str) -> dict | None:
-    cache_key = f"ta:{slug}"
-    cached    = cache_get(cache_key)
-    if cached is not None:
-        return cached
-
-    closes = _fetch_closes(slug)
-    if closes:
-        try:
-            result = _compute_ta(closes)
-            cache_set(cache_key, result)
-            _ta_stale[slug] = result
-            return result
-        except Exception as e:
-            logger.error(f"get_ta_analysis compute error ({slug}): {e}")
-
-    # Dacă fetch/calcul eșuează, returnează ultimul rezultat cunoscut
-    if slug in _ta_stale:
-        logger.info(f"get_ta_analysis: date stale pentru {slug}")
-        return _ta_stale[slug]
-    return None
 
 # ─── FORMAT BUBBLES ────────────────────────────────────────────────────────────
 
@@ -871,9 +730,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📊 Top 10",      callback_data="top"),
          InlineKeyboardButton("🔥 Trending",    callback_data="trending")],
         [InlineKeyboardButton("🫧 Bubbles 24h", callback_data="bubbles:24h"),
-         InlineKeyboardButton("📈 Analiză BTC", callback_data="analiza:BTC:bitcoin")],
-        [InlineKeyboardButton("📊 Stats",        callback_data="stats"),
-         InlineKeyboardButton("❓ Help",          callback_data="help")],
+         InlineKeyboardButton("📊 Stats",        callback_data="stats")],
+        [InlineKeyboardButton("❓ Help",          callback_data="help")],
     ]
     await update.message.reply_text(
         "👋 *Bun venit la CryptoBot!*\n\n"
@@ -883,7 +741,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /bubbles 24h\n"
         "• /bubbles 7d\n"
         "• /top\n"
-        "• /analiza ETH\n"
         "• /alert BTC 70000\n",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard),
@@ -904,7 +761,6 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/bubbles `1y` — Performanță 1 an\n\n"
         "/top — Top 10 după market cap\n\n"
         "/trending — Trending pe CoinGecko\n\n"
-        "/analiza `<coin>` — Analiză TradingView\n\n"
         "/stats — Statistici piață + Market Score\n\n"
         "/alert `<coin> <preț>` — Alertă de preț\n\n"
         "/myalerts — Alertele tale active\n\n"
@@ -1044,30 +900,6 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
     await msg.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def cmd_analiza(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(TOPIC_REDIRECT_MSG, parse_mode="Markdown")
-        return
-    if not context.args:
-        await update.message.reply_text("Folosire: `/analiza BTC`", parse_mode="Markdown")
-        return
-    query  = " ".join(context.args)
-    symbol = query.upper()
-    slug   = resolve_slug(query)
-    msg    = await update.message.reply_text(f"⏳ Se analizează *{symbol}*...", parse_mode="Markdown")
-    data   = get_ta_analysis(slug) if slug else None
-    if not data:
-        await msg.edit_text(
-            f"❌ Nu s-au putut obține datele pentru *{symbol}*.\n"
-            f"_Asigură-te că moneda există pe CoinGecko._",
-            parse_mode="Markdown")
-        return
-    text     = _format_analiza(symbol, data)
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"analiza:{symbol}:{slug}")]]
-    await msg.edit_text(text, parse_mode="Markdown",
-                        reply_markup=InlineKeyboardMarkup(keyboard),
-                        disable_web_page_preview=True)
-
 async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_in_correct_topic(update):
         await update.message.reply_text(TOPIC_REDIRECT_MSG, parse_mode="Markdown")
@@ -1143,40 +975,6 @@ async def cmd_removealert(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Număr invalid. Folosește /myalerts.")
 
 # ─── HELPER FORMAT ANALIZA ─────────────────────────────────────────────────────
-
-def _format_analiza(symbol: str, data: dict) -> str:
-    rec       = data["recommendation"]
-    emoji_map = {"STRONG_BUY": "🟢🟢", "BUY": "🟢", "NEUTRAL": "🟡",
-                 "SELL": "🔴", "STRONG_SELL": "🔴🔴"}
-    rec_emoji = emoji_map.get(rec, "⚪")
-    rsi       = data.get("rsi")
-    macd      = data.get("macd")
-    msig      = data.get("macd_signal")
-    ema20     = data.get("ema20")
-    ema50     = data.get("ema50")
-    ema200    = data.get("ema200")
-    close     = data.get("close", 0)
-    buys      = data.get("buy", 0)
-    sells     = data.get("sell", 0)
-    neus      = data.get("neutral", 0)
-    rsi_txt   = ("Supracumpărat ⚠️" if rsi and rsi >= 70 else
-                 "Supravândut ⚠️"   if rsi and rsi <= 30 else "Normal ✅")
-    macd_txt  = ("🟢 Bullish" if macd and msig and macd > msig else "🔴 Bearish")
-    tv_link   = f"https://www.tradingview.com/chart/?symbol=BINANCE:{symbol}USDT"
-    return (
-        f"📊 *Analiză Tehnică — {symbol}*\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"{rec_emoji} *Semnal: {rec.replace('_', ' ')}*\n\n"
-        f"*📈 Indicatori* (🟢`{buys}` 🟡`{neus}` 🔴`{sells}`)\n"
-        f"• RSI (14): `{rsi:.1f}` — {rsi_txt}\n"
-        f"• MACD: {macd_txt}\n\n"
-        f"*📉 Medii Mobile*\n"
-        f"• EMA 20:  `{fmt_price(ema20) if ema20 else 'N/A'}`\n"
-        f"• EMA 50:  `{fmt_price(ema50) if ema50 else 'N/A'}`\n"
-        f"• EMA 200: `{fmt_price(ema200) if ema200 else 'N/A'}`\n"
-        f"• Preț:    `{fmt_price(close)}`\n\n"
-        f"[📈 Vezi graficul pe TradingView]({tv_link})"
-    )
 
 # ─── INLINE BUTTON CALLBACKS ───────────────────────────────────────────────────
 
@@ -1261,8 +1059,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/bubbles `<perioadă>` — CryptoBubbles\n"
             "/top — Top 10 monede\n"
             "/trending — Trending CoinGecko\n"
-            "/analiza `<coin>` — Analiză TradingView\n"
-            "/stats — Statistici piață\n"
+                "/stats — Statistici piață\n"
             "/alert `<coin> <preț>` — Alertă de preț\n"
             "/myalerts — Alertele tale\n"
             "/removealert `<număr>` — Șterge alertă\n",
@@ -1292,21 +1089,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"price:{slug}")]]
         await query.edit_message_text(text, parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif data.startswith("analiza:"):
-        parts  = data.split(":", 2)
-        symbol = parts[1]
-        slug   = parts[2] if len(parts) > 2 else resolve_slug(symbol) or symbol.lower()
-        ta     = get_ta_analysis(slug)
-        if not ta:
-            await query.edit_message_text(
-                f"❌ Nu s-au putut obține datele pentru *{symbol}*.", parse_mode="Markdown")
-            return
-        text     = _format_analiza(symbol, ta)
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"analiza:{symbol}:{slug}")]]
-        await query.edit_message_text(text, parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard),
-                                      disable_web_page_preview=True)
 
 # ─── AUTO JOBS ─────────────────────────────────────────────────────────────────
 
@@ -1414,7 +1196,7 @@ def main():
     app.add_handler(CommandHandler("top",         cmd_top))
     app.add_handler(CommandHandler("trending",    cmd_trending))
     app.add_handler(CommandHandler("stats",       cmd_stats))
-    app.add_handler(CommandHandler("analiza",     cmd_analiza))
+
     app.add_handler(CommandHandler("alert",       cmd_alert))
     app.add_handler(CommandHandler("myalerts",    cmd_myalerts))
     app.add_handler(CommandHandler("removealert", cmd_removealert))
