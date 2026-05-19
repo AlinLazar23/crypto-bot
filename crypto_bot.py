@@ -402,25 +402,106 @@ def get_crypto_news(limit: int = 5) -> list[dict]:
         logger.error(f"get_crypto_news error: {e}")
     return []
 
-# ─── TRADINGVIEW ───────────────────────────────────────────────────────────────
+# ─── TA ENGINE (CoinGecko OHLC, fără dependențe externe) ──────────────────────
 
-def get_tv_analysis(symbol: str) -> object | None:
-    try:
-        from tradingview_ta import TA_Handler, Interval
-    except ImportError:
-        logger.error("tradingview-ta nu este instalat. Rulează: pip install tradingview-ta")
+def _ema_series(data: list[float], period: int) -> list[float]:
+    if len(data) < period:
+        return []
+    k   = 2.0 / (period + 1)
+    ema = sum(data[:period]) / period
+    out = [ema]
+    for v in data[period:]:
+        ema = v * k + ema * (1 - k)
+        out.append(ema)
+    return out
+
+def _rsi(closes: list[float], period: int = 14) -> float | None:
+    if len(closes) < period + 1:
         return None
-    for exchange in ("BINANCE", "BYBIT", "KUCOIN"):
-        try:
-            handler = TA_Handler(
-                symbol=f"{symbol}USDT",
-                screener="crypto",
-                exchange=exchange,
-                interval=Interval.INTERVAL_1_DAY,
-            )
-            return handler.get_analysis()
-        except Exception as e:
-            logger.warning(f"TradingView {exchange} error pentru {symbol}: {e}")
+    deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    gains  = [max(d, 0.0) for d in deltas]
+    losses = [max(-d, 0.0) for d in deltas]
+    avg_g  = sum(gains[:period]) / period
+    avg_l  = sum(losses[:period]) / period
+    for g, l in zip(gains[period:], losses[period:]):
+        avg_g = (avg_g * (period - 1) + g) / period
+        avg_l = (avg_l * (period - 1) + l) / period
+    if avg_l == 0:
+        return 100.0
+    return round(100 - 100 / (1 + avg_g / avg_l), 2)
+
+def _macd(closes: list[float]) -> tuple[float | None, float | None]:
+    s12 = _ema_series(closes, 12)
+    s26 = _ema_series(closes, 26)
+    if len(s12) < 9 or len(s26) < 9:
+        return None, None
+    diff   = len(s12) - len(s26)
+    macd_l = [s12[diff + i] - s26[i] for i in range(len(s26))]
+    sig    = _ema_series(macd_l, 9)
+    if not sig:
+        return None, None
+    return round(macd_l[-1], 8), round(sig[-1], 8)
+
+def get_ta_analysis(slug: str) -> dict | None:
+    cache_key = f"ta:{slug}"
+    cached    = cache_get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        r = requests.get(
+            f"{COINGECKO_BASE}/coins/{slug}/ohlc",
+            params={"vs_currency": "usd", "days": 365},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            logger.warning(f"get_ta_analysis HTTP {r.status_code} pentru {slug}")
+            return None
+        candles = r.json()
+        if len(candles) < 30:
+            return None
+        closes  = [c[4] for c in candles]   # [ts, open, high, low, close]
+        current = closes[-1]
+
+        rsi        = _rsi(closes)
+        ema20_s    = _ema_series(closes, 20)
+        ema50_s    = _ema_series(closes, 50)
+        ema200_s   = _ema_series(closes, 200)
+        macd, msig = _macd(closes)
+
+        ema20  = round(ema20_s[-1],  8) if ema20_s  else None
+        ema50  = round(ema50_s[-1],  8) if ema50_s  else None
+        ema200 = round(ema200_s[-1], 8) if ema200_s else None
+
+        buys = sells = 0
+        if rsi is not None:
+            if rsi < 30:   buys  += 1
+            elif rsi > 70: sells += 1
+        if macd is not None and msig is not None:
+            if macd > msig: buys  += 1
+            else:           sells += 1
+        for ema in (ema20, ema50, ema200):
+            if ema:
+                if current > ema: buys  += 1
+                else:             sells += 1
+
+        total = buys + sells or 1
+        if   buys / total >= 0.7:  rec = "STRONG_BUY"
+        elif buys / total >= 0.5:  rec = "BUY"
+        elif sells / total >= 0.7: rec = "STRONG_SELL"
+        elif sells / total >= 0.5: rec = "SELL"
+        else:                      rec = "NEUTRAL"
+
+        result = {
+            "recommendation": rec,
+            "buy": buys, "sell": sells, "neutral": max(0, 5 - buys - sells),
+            "rsi": rsi, "macd": macd, "macd_signal": msig,
+            "ema20": ema20, "ema50": ema50, "ema200": ema200,
+            "close": current,
+        }
+        cache_set(cache_key, result)
+        return result
+    except Exception as e:
+        logger.error(f"get_ta_analysis error ({slug}): {e}")
     return None
 
 # ─── FORMAT BUBBLES ────────────────────────────────────────────────────────────
@@ -720,7 +801,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📊 Top 10",      callback_data="top"),
          InlineKeyboardButton("🔥 Trending",    callback_data="trending")],
         [InlineKeyboardButton("🫧 Bubbles 24h", callback_data="bubbles:24h"),
-         InlineKeyboardButton("📈 Analiză BTC", callback_data="analiza:BTC")],
+         InlineKeyboardButton("📈 Analiză BTC", callback_data="analiza:BTC:bitcoin")],
         [InlineKeyboardButton("📊 Stats",        callback_data="stats"),
          InlineKeyboardButton("❓ Help",          callback_data="help")],
     ]
@@ -900,18 +981,19 @@ async def cmd_analiza(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Folosire: `/analiza BTC`", parse_mode="Markdown")
         return
-    query    = " ".join(context.args)
-    symbol   = query.upper()
-    msg      = await update.message.reply_text(f"⏳ Se analizează *{symbol}*...", parse_mode="Markdown")
-    analysis = get_tv_analysis(symbol)
-    if not analysis:
+    query  = " ".join(context.args)
+    symbol = query.upper()
+    slug   = resolve_slug(query)
+    msg    = await update.message.reply_text(f"⏳ Se analizează *{symbol}*...", parse_mode="Markdown")
+    data   = get_ta_analysis(slug) if slug else None
+    if not data:
         await msg.edit_text(
-            f"❌ Analiza pentru *{symbol}* nu este disponibilă.\n"
-            f"_Verifică că simbolul există pe Binance/Bybit (ex: BTC, ETH, SOL)._",
+            f"❌ Nu s-au putut obține datele pentru *{symbol}*.\n"
+            f"_Asigură-te că moneda există pe CoinGecko._",
             parse_mode="Markdown")
         return
-    text     = _format_analiza(symbol, analysis)
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"analiza:{symbol}")]]
+    text     = _format_analiza(symbol, data)
+    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"analiza:{symbol}:{slug}")]]
     await msg.edit_text(text, parse_mode="Markdown",
                         reply_markup=InlineKeyboardMarkup(keyboard),
                         disable_web_page_preview=True)
@@ -991,37 +1073,36 @@ async def cmd_removealert(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── HELPER FORMAT ANALIZA ─────────────────────────────────────────────────────
 
-def _format_analiza(symbol: str, analysis) -> str:
-    s   = analysis.summary
-    ind = analysis.indicators
-    ma  = analysis.moving_averages
-    rec = s.get("RECOMMENDATION", "N/A")
+def _format_analiza(symbol: str, data: dict) -> str:
+    rec       = data["recommendation"]
     emoji_map = {"STRONG_BUY": "🟢🟢", "BUY": "🟢", "NEUTRAL": "🟡",
                  "SELL": "🔴", "STRONG_SELL": "🔴🔴"}
     rec_emoji = emoji_map.get(rec, "⚪")
-    rsi    = ind.get("RSI") or 0
-    macd   = ind.get("MACD.macd") or 0
-    macd_s = ind.get("MACD.signal") or 0
-    ema20  = ind.get("EMA20") or 0
-    ema50  = ind.get("EMA50") or 0
-    ema200 = ind.get("EMA200") or 0
-    close  = ind.get("close") or 0
-    rsi_txt  = "Supracumpărat ⚠️" if rsi >= 70 else ("Supravândut ⚠️" if rsi <= 30 else "Normal ✅")
-    macd_txt = "🟢 Bullish" if macd > macd_s else "🔴 Bearish"
-    buy_s  = s.get("BUY", 0);  neu_s  = s.get("NEUTRAL", 0);  sell_s  = s.get("SELL", 0)
-    buy_ma = ma.get("BUY", 0); neu_ma = ma.get("NEUTRAL", 0); sell_ma = ma.get("SELL", 0)
-    tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{symbol}USDT"
+    rsi       = data.get("rsi")
+    macd      = data.get("macd")
+    msig      = data.get("macd_signal")
+    ema20     = data.get("ema20")
+    ema50     = data.get("ema50")
+    ema200    = data.get("ema200")
+    close     = data.get("close", 0)
+    buys      = data.get("buy", 0)
+    sells     = data.get("sell", 0)
+    neus      = data.get("neutral", 0)
+    rsi_txt   = ("Supracumpărat ⚠️" if rsi and rsi >= 70 else
+                 "Supravândut ⚠️"   if rsi and rsi <= 30 else "Normal ✅")
+    macd_txt  = ("🟢 Bullish" if macd and msig and macd > msig else "🔴 Bearish")
+    tv_link   = f"https://www.tradingview.com/chart/?symbol=BINANCE:{symbol}USDT"
     return (
-        f"📊 *Analiză Tehnică — {symbol}/USDT*\n"
+        f"📊 *Analiză Tehnică — {symbol}*\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"{rec_emoji} *Semnal: {rec.replace('_', ' ')}*\n\n"
-        f"*📈 Oscilatori* (🟢`{buy_s}` 🟡`{neu_s}` 🔴`{sell_s}`)\n"
+        f"*📈 Indicatori* (🟢`{buys}` 🟡`{neus}` 🔴`{sells}`)\n"
         f"• RSI (14): `{rsi:.1f}` — {rsi_txt}\n"
         f"• MACD: {macd_txt}\n\n"
-        f"*📉 Medii Mobile* (🟢`{buy_ma}` 🟡`{neu_ma}` 🔴`{sell_ma}`)\n"
-        f"• EMA 20:  `{fmt_price(ema20)}`\n"
-        f"• EMA 50:  `{fmt_price(ema50)}`\n"
-        f"• EMA 200: `{fmt_price(ema200)}`\n"
+        f"*📉 Medii Mobile*\n"
+        f"• EMA 20:  `{fmt_price(ema20) if ema20 else 'N/A'}`\n"
+        f"• EMA 50:  `{fmt_price(ema50) if ema50 else 'N/A'}`\n"
+        f"• EMA 200: `{fmt_price(ema200) if ema200 else 'N/A'}`\n"
         f"• Preț:    `{fmt_price(close)}`\n\n"
         f"[📈 Vezi graficul pe TradingView]({tv_link})"
     )
@@ -1142,14 +1223,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                       reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("analiza:"):
-        symbol   = data.split(":", 1)[1]
-        analysis = get_tv_analysis(symbol)
-        if not analysis:
+        parts  = data.split(":", 2)
+        symbol = parts[1]
+        slug   = parts[2] if len(parts) > 2 else resolve_slug(symbol) or symbol.lower()
+        ta     = get_ta_analysis(slug)
+        if not ta:
             await query.edit_message_text(
-                f"❌ Nu s-a putut obține analiza pentru *{symbol}*.", parse_mode="Markdown")
+                f"❌ Nu s-au putut obține datele pentru *{symbol}*.", parse_mode="Markdown")
             return
-        text     = _format_analiza(symbol, analysis)
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"analiza:{symbol}")]]
+        text     = _format_analiza(symbol, ta)
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"analiza:{symbol}:{slug}")]]
         await query.edit_message_text(text, parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(keyboard),
                                       disable_web_page_preview=True)
