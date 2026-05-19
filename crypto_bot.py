@@ -234,10 +234,26 @@ COIN_SLUG_MAP = {
     "hyperliquid": "hyperliquid", "kaspa": "kaspa",
 }
 
-def resolve_slug(query: str) -> str:
+def resolve_slug(query: str) -> str | None:
     q    = query.strip()
     slug = COIN_SLUG_MAP.get(q.upper()) or COIN_SLUG_MAP.get(q.lower())
-    return slug if slug else q.lower()
+    if slug:
+        return slug
+    cache_key = f"search:{q.lower()}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        r = requests.get(f"{COINGECKO_BASE}/search", params={"query": q}, timeout=10)
+        if r.status_code == 200:
+            coins = r.json().get("coins", [])
+            if coins:
+                found = coins[0]["id"]
+                cache_set(cache_key, found)
+                return found
+    except Exception as e:
+        logger.error(f"resolve_slug search error: {e}")
+    return None
 
 # ─── DATE COINGECKO ────────────────────────────────────────────────────────────
 
@@ -740,9 +756,9 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Folosire: `/price BTC`", parse_mode="Markdown")
         return
     query = " ".join(context.args)
-    msg   = await update.message.reply_text("⏳ Se încarcă datele...")
-    slug  = resolve_slug(query)
-    data  = get_coin_data(slug)
+    msg  = await update.message.reply_text("⏳ Se încarcă datele...")
+    slug = resolve_slug(query)
+    data = get_coin_data(slug) if slug else None
     if not data:
         await msg.edit_text(
             f"❌ *{query.upper()}* nu a fost găsit.\n"
@@ -867,7 +883,7 @@ async def cmd_analiza(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     query     = " ".join(context.args)
     slug      = resolve_slug(query)
-    coin_info = get_coin_data(slug)
+    coin_info = get_coin_data(slug) if slug else None
     symbol    = coin_info["symbol"] if coin_info else query.upper()
     msg       = await update.message.reply_text(f"⏳ Se analizează *{symbol}*...", parse_mode="Markdown")
     analysis  = get_tv_analysis(symbol)
@@ -894,7 +910,7 @@ async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Preț invalid.", parse_mode="Markdown")
         return
     slug = resolve_slug(query)
-    data = get_coin_data(slug)
+    data = get_coin_data(slug) if slug else None
     if not data:
         await update.message.reply_text(f"❌ *{query.upper()}* nu a fost găsit.", parse_mode="Markdown")
         return
