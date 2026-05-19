@@ -260,30 +260,38 @@ def resolve_slug(query: str) -> str | None:
 def get_coin_data(slug: str) -> dict | None:
     try:
         r = requests.get(
-            f"{COINGECKO_BASE}/coins/{slug}",
-            params={"localization": "false", "tickers": "false",
-                    "community_data": "false", "developer_data": "false"},
+            f"{COINGECKO_BASE}/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "ids": slug,
+                "sparkline": "false",
+                "price_change_percentage": "1h,24h,7d,30d,1y",
+            },
             timeout=10,
         )
         if r.status_code != 200:
+            logger.error(f"get_coin_data HTTP {r.status_code} for {slug}")
             return None
-        d = r.json()
-        m = d["market_data"]
+        data = r.json()
+        if not data:
+            return None
+        c = data[0]
         return {
-            "slug":       slug,
-            "symbol":     d["symbol"].upper(),
-            "name":       d["name"],
-            "rank":       d.get("market_cap_rank", "N/A"),
-            "price":      m["current_price"].get("usd", 0),
-            "change_1h":  m.get("price_change_percentage_1h_in_currency", {}).get("usd") or 0,
-            "change_24h": m.get("price_change_percentage_24h") or 0,
-            "change_7d":  m.get("price_change_percentage_7d") or 0,
-            "change_30d": m.get("price_change_percentage_30d") or 0,
-            "change_1y":  m.get("price_change_percentage_1y") or 0,
-            "high_24h":   m["high_24h"].get("usd", 0),
-            "low_24h":    m["low_24h"].get("usd", 0),
-            "market_cap": m["market_cap"].get("usd", 0),
-            "volume_24h": m["total_volume"].get("usd", 0),
+            "slug":       c["id"],
+            "symbol":     c["symbol"].upper(),
+            "name":       c["name"],
+            "rank":       c.get("market_cap_rank") or "N/A",
+            "price":      c.get("current_price") or 0,
+            "change_1h":  c.get("price_change_percentage_1h_in_currency") or 0,
+            "change_24h": c.get("price_change_percentage_24h_in_currency")
+                          or c.get("price_change_percentage_24h") or 0,
+            "change_7d":  c.get("price_change_percentage_7d_in_currency") or 0,
+            "change_30d": c.get("price_change_percentage_30d_in_currency") or 0,
+            "change_1y":  c.get("price_change_percentage_1y_in_currency") or 0,
+            "high_24h":   c.get("high_24h") or 0,
+            "low_24h":    c.get("low_24h") or 0,
+            "market_cap": c.get("market_cap") or 0,
+            "volume_24h": c.get("total_volume") or 0,
         }
     except Exception as e:
         logger.error(f"get_coin_data error ({slug}): {e}")
@@ -294,22 +302,26 @@ def get_top_coins(limit: int = 10) -> list[dict]:
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
-    try:
-        r = requests.get(
-            f"{COINGECKO_BASE}/coins/markets",
-            params={"vs_currency": "usd", "order": "market_cap_desc",
-                    "per_page": limit, "page": 1, "sparkline": "false"},
-            timeout=10,
-        )
-        if r.status_code == 200:
-            result = [{"symbol": c["symbol"].upper(), "name": c["name"],
-                     "slug": c["id"], "price": c["current_price"],
-                     "change_24h": c.get("price_change_percentage_24h") or 0}
-                    for c in r.json()]
-            cache_set(cache_key, result)
-            return result
-    except Exception as e:
-        logger.error(f"get_top_coins error: {e}")
+    for attempt in range(3):
+        if attempt > 0:
+            time.sleep(2)
+        try:
+            r = requests.get(
+                f"{COINGECKO_BASE}/coins/markets",
+                params={"vs_currency": "usd", "order": "market_cap_desc",
+                        "per_page": limit, "page": 1, "sparkline": "false"},
+                timeout=10,
+            )
+            if r.status_code == 200:
+                result = [{"symbol": c["symbol"].upper(), "name": c["name"],
+                         "slug": c["id"], "price": c["current_price"],
+                         "change_24h": c.get("price_change_percentage_24h") or 0}
+                        for c in r.json()]
+                cache_set(cache_key, result)
+                return result
+            logger.warning(f"get_top_coins HTTP {r.status_code} (attempt {attempt + 1})")
+        except Exception as e:
+            logger.error(f"get_top_coins error: {e}")
     return []
 
 def get_trending_coins() -> list[dict]:
@@ -330,9 +342,9 @@ def get_trending_coins() -> list[dict]:
         logger.error(f"get_trending_coins error: {e}")
     return []
 
-def get_bubbles_data(period: str = "24h") -> list[dict]:
-    cache_key = f"bubbles:{period}"
-    cached = cache_get(cache_key)
+def get_bubbles_data() -> list[dict]:
+    """Fetch toate perioadele deodată, cachează sub o singură cheie."""
+    cached = cache_get("bubbles_all")
     if cached is not None:
         return cached
     slugs = [slug for slug, _ in BUBBLES_COINS]
@@ -360,15 +372,17 @@ def get_bubbles_data(period: str = "24h") -> list[dict]:
                     "rank":       c.get("market_cap_rank", 999),
                     "price":      c.get("current_price", 0),
                     "change_1h":  c.get("price_change_percentage_1h_in_currency") or 0,
-                    "change_24h": c.get("price_change_percentage_24h") or 0,
+                    "change_24h": c.get("price_change_percentage_24h_in_currency")
+                                  or c.get("price_change_percentage_24h") or 0,
                     "change_7d":  c.get("price_change_percentage_7d_in_currency") or 0,
                     "change_30d": c.get("price_change_percentage_30d_in_currency") or 0,
                     "change_1y":  c.get("price_change_percentage_1y_in_currency") or 0,
                     "market_cap": c.get("market_cap", 0),
                     "volume_24h": c.get("total_volume", 0),
                 })
-            cache_set(cache_key, result)
+            cache_set("bubbles_all", result)
             return result
+        logger.error(f"get_bubbles_data HTTP {r.status_code}: {r.text[:200]}")
     except Exception as e:
         logger.error(f"get_bubbles_data error: {e}")
     return []
@@ -393,15 +407,20 @@ def get_crypto_news(limit: int = 5) -> list[dict]:
 def get_tv_analysis(symbol: str) -> object | None:
     try:
         from tradingview_ta import TA_Handler, Interval
-        handler = TA_Handler(
-            symbol=f"{symbol}USDT",
-            screener="crypto",
-            exchange="BINANCE",
-            interval=Interval.INTERVAL_1_DAY,
-        )
-        return handler.get_analysis()
-    except Exception as e:
-        logger.error(f"TradingView error: {e}")
+    except ImportError:
+        logger.error("tradingview-ta nu este instalat. Rulează: pip install tradingview-ta")
+        return None
+    for exchange in ("BINANCE", "BYBIT", "KUCOIN"):
+        try:
+            handler = TA_Handler(
+                symbol=f"{symbol}USDT",
+                screener="crypto",
+                exchange=exchange,
+                interval=Interval.INTERVAL_1_DAY,
+            )
+            return handler.get_analysis()
+        except Exception as e:
+            logger.warning(f"TradingView {exchange} error pentru {symbol}: {e}")
     return None
 
 # ─── FORMAT BUBBLES ────────────────────────────────────────────────────────────
@@ -794,7 +813,7 @@ async def cmd_bubbles(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown")
         return
     msg = await update.message.reply_text(f"⏳ Se încarcă CryptoBubbles ({period})...", parse_mode="Markdown")
-    coins = get_bubbles_data(period)
+    coins = get_bubbles_data()
     if not coins:
         await msg.edit_text("❌ Nu s-au putut obține datele.")
         return
@@ -881,14 +900,15 @@ async def cmd_analiza(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Folosire: `/analiza BTC`", parse_mode="Markdown")
         return
-    query     = " ".join(context.args)
-    slug      = resolve_slug(query)
-    coin_info = get_coin_data(slug) if slug else None
-    symbol    = coin_info["symbol"] if coin_info else query.upper()
-    msg       = await update.message.reply_text(f"⏳ Se analizează *{symbol}*...", parse_mode="Markdown")
-    analysis  = get_tv_analysis(symbol)
+    query    = " ".join(context.args)
+    symbol   = query.upper()
+    msg      = await update.message.reply_text(f"⏳ Se analizează *{symbol}*...", parse_mode="Markdown")
+    analysis = get_tv_analysis(symbol)
     if not analysis:
-        await msg.edit_text(f"❌ Nu s-a putut obține analiza pentru *{symbol}*.", parse_mode="Markdown")
+        await msg.edit_text(
+            f"❌ Analiza pentru *{symbol}* nu este disponibilă.\n"
+            f"_Verifică că simbolul există pe Binance/Bybit (ex: BTC, ETH, SOL)._",
+            parse_mode="Markdown")
         return
     text     = _format_analiza(symbol, analysis)
     keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"analiza:{symbol}")]]
@@ -1045,7 +1065,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("bubbles:"):
         period = data.split(":", 1)[1]
         await query.edit_message_text(f"⏳ Se încarcă CryptoBubbles ({period})...", parse_mode="Markdown")
-        coins = get_bubbles_data(period)
+        coins = get_bubbles_data()
         if not coins:
             await query.edit_message_text("❌ Nu s-au putut obține datele.")
             return
