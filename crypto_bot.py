@@ -77,7 +77,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ─── TRANSLATIONS ──────────────────────────────────────────────────────────────
-user_lang: dict[int, str] = {}
+user_lang: dict[int, str] = {}  # populat după load_data()
 
 TEXTS: dict[str, dict] = {
     "ro": {
@@ -206,34 +206,45 @@ JSONBIN_BASE  = "https://api.jsonbin.io/v3/b"
 def _jsonbin_headers() -> dict:
     return {"X-Master-Key": JSONBIN_KEY, "Content-Type": "application/json"}
 
-def load_alerts() -> dict[int, list[dict]]:
+def _build_payload() -> dict:
+    """Construiește payload-ul complet (alerte + limbi) pentru salvare."""
+    payload = {str(k): v for k, v in user_alerts.items()}
+    if user_lang:
+        payload["__lang__"] = {str(k): v for k, v in user_lang.items()}
+    return payload
+
+def load_data() -> tuple[dict[int, list[dict]], dict[int, str]]:
+    """Încarcă alertele și preferințele de limbă."""
+    raw = {}
     if JSONBIN_KEY and JSONBIN_BIN:
         try:
             r = requests.get(f"{JSONBIN_BASE}/{JSONBIN_BIN}/latest",
                              headers=_jsonbin_headers(), timeout=10)
             if r.status_code == 200:
                 raw = r.json().get("record", {})
-                logger.info("Alerte încărcate din JSONBin.")
-                return {int(k): v for k, v in raw.items()}
-            logger.warning(f"load_alerts JSONBin HTTP {r.status_code}")
+                logger.info("Date încărcate din JSONBin.")
+            else:
+                logger.warning(f"load_data JSONBin HTTP {r.status_code}")
         except Exception as e:
-            logger.error(f"load_alerts JSONBin error: {e}")
-    if os.path.exists(ALERTS_FILE):
+            logger.error(f"load_data JSONBin error: {e}")
+    if not raw and os.path.exists(ALERTS_FILE):
         try:
             with open(ALERTS_FILE, "r") as f:
                 raw = json.load(f)
-            return {int(k): v for k, v in raw.items()}
         except Exception as e:
-            logger.error(f"load_alerts local error: {e}")
-    return {}
+            logger.error(f"load_data local error: {e}")
+    lang_raw   = raw.pop("__lang__", {})
+    alerts_out = {int(k): v for k, v in raw.items()}
+    lang_out   = {int(k): v for k, v in lang_raw.items()}
+    return alerts_out, lang_out
 
 def save_alerts() -> None:
+    payload = _build_payload()
     if JSONBIN_KEY and JSONBIN_BIN:
         try:
             r = requests.put(f"{JSONBIN_BASE}/{JSONBIN_BIN}",
                              headers=_jsonbin_headers(),
-                             json={str(k): v for k, v in user_alerts.items()},
-                             timeout=10)
+                             json=payload, timeout=10)
             if r.status_code == 200:
                 return
             logger.warning(f"save_alerts JSONBin HTTP {r.status_code}")
@@ -241,12 +252,14 @@ def save_alerts() -> None:
             logger.error(f"save_alerts JSONBin error: {e}")
     try:
         with open(ALERTS_FILE, "w") as f:
-            json.dump(user_alerts, f, indent=2)
+            json.dump(payload, f, indent=2)
     except Exception as e:
         logger.error(f"save_alerts local error: {e}")
 
 
-user_alerts: dict[int, list[dict]] = load_alerts()
+_loaded_alerts, _loaded_lang = load_data()
+user_alerts: dict[int, list[dict]] = _loaded_alerts
+user_lang.update(_loaded_lang)
 
 # ─── CACHE (evită rate limiting CoinGecko) ─────────────────────────────────────
 _cache: dict[str, tuple[any, float]] = {}
@@ -1155,6 +1168,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         uid  = query.from_user.id
         lang = data.split(":", 1)[1]
         user_lang[uid] = lang
+        save_alerts()
         await query.edit_message_text(t(uid, "lang_set"), parse_mode="Markdown")
 
     elif data.startswith("price:"):
