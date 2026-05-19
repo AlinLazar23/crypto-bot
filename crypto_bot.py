@@ -200,6 +200,7 @@ def t(uid: int, key: str, **kw) -> str:
 # ─── PERSISTENT ALERTS ─────────────────────────────────────────────────────────
 ALERTS_FILE   = os.path.join("/data" if os.path.isdir("/data") else ".", "alerts.json")
 JSONBIN_KEY   = os.environ.get("JSONBIN_KEY", "")
+OWNER_ID      = int(os.environ.get("OWNER_ID", "0"))
 JSONBIN_BIN   = os.environ.get("JSONBIN_BIN", "")
 JSONBIN_BASE  = "https://api.jsonbin.io/v3/b"
 
@@ -1065,6 +1066,35 @@ async def cmd_removealert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except (ValueError, IndexError):
         await update.message.reply_text(t(uid, "removealert_bad"))
 
+async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if OWNER_ID and uid != OWNER_ID:
+        return
+    if not is_in_correct_topic(update):
+        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
+        return
+
+    msg = await update.message.reply_text("⏳ Se trimit anunțurile...", parse_mode="Markdown")
+
+    jobs = [
+        ("📈 Date & Analize", TOPIC_DATE,   auto_stats_job),
+        ("📊 Piață",          TOPIC_PIATA,  auto_trending_job),
+        ("📰 Știri",          TOPIC_STIRI,  auto_stiri_job),
+    ]
+
+    lines = ["*🧪 Test anunțuri automate:*\n"]
+    for label, topic_id, job_fn in jobs:
+        if not topic_id:
+            lines.append(f"⚪ {label} — neconfigurat")
+            continue
+        try:
+            await job_fn(context)
+            lines.append(f"✅ {label} — trimis")
+        except Exception as e:
+            lines.append(f"❌ {label} — `{e}`")
+
+    await msg.edit_text("\n".join(lines), parse_mode="Markdown")
+
 # ─── INLINE BUTTON CALLBACKS ───────────────────────────────────────────────────
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1290,6 +1320,7 @@ def main():
     app.add_handler(CommandHandler("stats",       cmd_stats))
 
     app.add_handler(CommandHandler("lang",        cmd_lang))
+    app.add_handler(CommandHandler("test",        cmd_test))
     app.add_handler(CommandHandler("alert",       cmd_alert))
     app.add_handler(CommandHandler("myalerts",    cmd_myalerts))
     app.add_handler(CommandHandler("removealert", cmd_removealert))
