@@ -79,24 +79,67 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ─── PERSISTENT ALERTS ─────────────────────────────────────────────────────────
-ALERTS_FILE = "alerts.json"
+ALERTS_FILE   = os.path.join("/data" if os.path.isdir("/data") else ".", "alerts.json")
+JSONBIN_KEY   = os.environ.get("JSONBIN_KEY", "")
+JSONBIN_BIN   = os.environ.get("JSONBIN_BIN", "")
+JSONBIN_BASE  = "https://api.jsonbin.io/v3/b"
+
+def _jsonbin_headers() -> dict:
+    return {"X-Master-Key": JSONBIN_KEY, "Content-Type": "application/json"}
 
 def load_alerts() -> dict[int, list[dict]]:
+    if JSONBIN_KEY and JSONBIN_BIN:
+        try:
+            r = requests.get(f"{JSONBIN_BASE}/{JSONBIN_BIN}/latest",
+                             headers=_jsonbin_headers(), timeout=10)
+            if r.status_code == 200:
+                raw = r.json().get("record", {})
+                logger.info("Alerte încărcate din JSONBin.")
+                return {int(k): v for k, v in raw.items()}
+            logger.warning(f"load_alerts JSONBin HTTP {r.status_code}")
+        except Exception as e:
+            logger.error(f"load_alerts JSONBin error: {e}")
     if os.path.exists(ALERTS_FILE):
         try:
             with open(ALERTS_FILE, "r") as f:
                 raw = json.load(f)
             return {int(k): v for k, v in raw.items()}
         except Exception as e:
-            logger.error(f"load_alerts error: {e}")
+            logger.error(f"load_alerts local error: {e}")
     return {}
 
 def save_alerts() -> None:
+    if JSONBIN_KEY and JSONBIN_BIN:
+        try:
+            r = requests.put(f"{JSONBIN_BASE}/{JSONBIN_BIN}",
+                             headers=_jsonbin_headers(),
+                             json={str(k): v for k, v in user_alerts.items()},
+                             timeout=10)
+            if r.status_code == 200:
+                return
+            logger.warning(f"save_alerts JSONBin HTTP {r.status_code}")
+        except Exception as e:
+            logger.error(f"save_alerts JSONBin error: {e}")
     try:
         with open(ALERTS_FILE, "w") as f:
             json.dump(user_alerts, f, indent=2)
     except Exception as e:
-        logger.error(f"save_alerts error: {e}")
+        logger.error(f"save_alerts local error: {e}")
+
+def create_jsonbin() -> str | None:
+    """Creează un bin nou și returnează ID-ul. Rulează o singură dată."""
+    try:
+        r = requests.post(JSONBIN_BASE,
+                          headers={**_jsonbin_headers(), "X-Bin-Name": "crypto-bot-alerts"},
+                          json={},
+                          timeout=10)
+        if r.status_code == 200:
+            bin_id = r.json()["metadata"]["id"]
+            logger.info(f"JSONBin creat: {bin_id} — setează JSONBIN_BIN={bin_id} în Railway!")
+            return bin_id
+    except Exception as e:
+        logger.error(f"create_jsonbin error: {e}")
+    return None
 
 user_alerts: dict[int, list[dict]] = load_alerts()
 
@@ -1356,6 +1399,12 @@ def main():
     app.job_queue.run_daily(auto_trending_job, time=datetime.time(12, 5,  tzinfo=TZ_RO))
     app.job_queue.run_daily(auto_trending_job, time=datetime.time(0,  5,  tzinfo=TZ_RO))
 
+    if JSONBIN_KEY and not JSONBIN_BIN:
+        new_id = create_jsonbin()
+        if new_id:
+            print(f"  ⚠️  JSONBIN_BIN neconfigurat — bin creat automat: {new_id}")
+            print(f"      Setează în Railway: JSONBIN_BIN={new_id}")
+
     print("🤖 CryptoBot rulează cu suport Forum Topics.")
     print(f"  GROUP_CHAT_ID  : {GROUP_CHAT_ID   or 'neconfigurat'}")
     print(f"  TOPIC_COMENZI  : {TOPIC_COMENZI   or 'neconfigurat'}")
@@ -1364,6 +1413,7 @@ def main():
     print(f"  TOPIC_DATE     : {TOPIC_DATE       or 'neconfigurat'}")
     print(f"  TOPIC_PREDICTII: {TOPIC_PREDICTII  or 'neconfigurat'}")
     print(f"  CRYPTOPANIC    : {'configurat' if CRYPTOPANIC_TOKEN else 'neconfigurat (stiri dezactivate)'}")
+    print(f"  JSONBIN        : {'activ (' + JSONBIN_BIN + ')' if JSONBIN_BIN else 'neconfigurat (alerte nu persista)'}")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
