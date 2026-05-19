@@ -483,7 +483,7 @@ def get_ta_analysis(slug: str) -> dict | None:
             time.sleep(2)
         try:
             r = requests.get(
-                f"{COINGECKO_BASE}/coins/{slug}/ohlc",
+                f"{COINGECKO_BASE}/coins/{slug}/market_chart",
                 params={"vs_currency": "usd", "days": 365},
                 timeout=15,
             )
@@ -495,10 +495,10 @@ def get_ta_analysis(slug: str) -> dict | None:
     else:
         return None
     try:
-        candles = r.json()
-        if len(candles) < 30:
+        prices = r.json().get("prices", [])
+        if len(prices) < 30:
             return None
-        closes  = [c[4] for c in candles]   # [ts, open, high, low, close]
+        closes  = [p[1] for p in prices]   # [timestamp, price]
         current = closes[-1]
 
         rsi        = _rsi(closes)
