@@ -473,11 +473,12 @@ def _macd(closes: list[float]) -> tuple[float | None, float | None]:
         return None, None
     return round(macd_l[-1], 8), round(sig[-1], 8)
 
-def get_ta_analysis(slug: str) -> dict | None:
-    cache_key = f"ta:{slug}"
-    cached    = cache_get(cache_key)
-    if cached is not None:
-        return cached
+# Cache permanent pentru ultimul rezultat TA cunoscut (nu expiră niciodată)
+_ta_stale: dict[str, dict] = {}
+
+def _fetch_closes(slug: str) -> list[float]:
+    """Încearcă market_chart (zilnic), fallback pe ohlc (4h). Returnează lista de close-uri."""
+    # Sursă 1: market_chart 365 zile → ~365 prețuri zilnice
     for attempt in range(3):
         if attempt > 0:
             time.sleep(2)
@@ -488,59 +489,89 @@ def get_ta_analysis(slug: str) -> dict | None:
                 timeout=15,
             )
             if r.status_code == 200:
-                break
-            logger.warning(f"get_ta_analysis HTTP {r.status_code} pentru {slug} (attempt {attempt + 1})")
+                closes = [p[1] for p in r.json().get("prices", [])]
+                if len(closes) >= 30:
+                    return closes
         except Exception as e:
-            logger.error(f"get_ta_analysis error ({slug}): {e}")
-    else:
-        return None
-    try:
-        prices = r.json().get("prices", [])
-        if len(prices) < 30:
-            return None
-        closes  = [p[1] for p in prices]   # [timestamp, price]
-        current = closes[-1]
+            logger.warning(f"_fetch_closes market_chart error ({slug}): {e}")
 
-        rsi        = _rsi(closes)
-        ema20_s    = _ema_series(closes, 20)
-        ema50_s    = _ema_series(closes, 50)
-        ema200_s   = _ema_series(closes, 200)
-        macd, msig = _macd(closes)
+    # Sursă 2: ohlc 90 zile → ~540 lumânări de 4h
+    for attempt in range(2):
+        if attempt > 0:
+            time.sleep(2)
+        try:
+            r = requests.get(
+                f"{COINGECKO_BASE}/coins/{slug}/ohlc",
+                params={"vs_currency": "usd", "days": 90},
+                timeout=15,
+            )
+            if r.status_code == 200:
+                closes = [c[4] for c in r.json()]
+                if len(closes) >= 30:
+                    return closes
+        except Exception as e:
+            logger.warning(f"_fetch_closes ohlc error ({slug}): {e}")
 
-        ema20  = round(ema20_s[-1],  8) if ema20_s  else None
-        ema50  = round(ema50_s[-1],  8) if ema50_s  else None
-        ema200 = round(ema200_s[-1], 8) if ema200_s else None
+    return []
 
-        buys = sells = 0
-        if rsi is not None:
-            if rsi < 30:   buys  += 1
-            elif rsi > 70: sells += 1
-        if macd is not None and msig is not None:
-            if macd > msig: buys  += 1
-            else:           sells += 1
-        for ema in (ema20, ema50, ema200):
-            if ema:
-                if current > ema: buys  += 1
-                else:             sells += 1
+def _compute_ta(closes: list[float]) -> dict:
+    current    = closes[-1]
+    rsi        = _rsi(closes)
+    ema20_s    = _ema_series(closes, 20)
+    ema50_s    = _ema_series(closes, 50)
+    ema200_s   = _ema_series(closes, 200)
+    macd, msig = _macd(closes)
+    ema20  = round(ema20_s[-1],  8) if ema20_s  else None
+    ema50  = round(ema50_s[-1],  8) if ema50_s  else None
+    ema200 = round(ema200_s[-1], 8) if ema200_s else None
 
-        total = buys + sells or 1
-        if   buys / total >= 0.7:  rec = "STRONG_BUY"
-        elif buys / total >= 0.5:  rec = "BUY"
-        elif sells / total >= 0.7: rec = "STRONG_SELL"
-        elif sells / total >= 0.5: rec = "SELL"
-        else:                      rec = "NEUTRAL"
+    buys = sells = 0
+    if rsi is not None:
+        if rsi < 30:   buys  += 1
+        elif rsi > 70: sells += 1
+    if macd is not None and msig is not None:
+        if macd > msig: buys  += 1
+        else:           sells += 1
+    for ema in (ema20, ema50, ema200):
+        if ema:
+            if current > ema: buys  += 1
+            else:             sells += 1
 
-        result = {
-            "recommendation": rec,
-            "buy": buys, "sell": sells, "neutral": max(0, 5 - buys - sells),
-            "rsi": rsi, "macd": macd, "macd_signal": msig,
-            "ema20": ema20, "ema50": ema50, "ema200": ema200,
-            "close": current,
-        }
-        cache_set(cache_key, result)
-        return result
-    except Exception as e:
-        logger.error(f"get_ta_analysis error ({slug}): {e}")
+    total = buys + sells or 1
+    if   buys / total >= 0.7:  rec = "STRONG_BUY"
+    elif buys / total >= 0.5:  rec = "BUY"
+    elif sells / total >= 0.7: rec = "STRONG_SELL"
+    elif sells / total >= 0.5: rec = "SELL"
+    else:                      rec = "NEUTRAL"
+
+    return {
+        "recommendation": rec,
+        "buy": buys, "sell": sells, "neutral": max(0, 5 - buys - sells),
+        "rsi": rsi, "macd": macd, "macd_signal": msig,
+        "ema20": ema20, "ema50": ema50, "ema200": ema200,
+        "close": current,
+    }
+
+def get_ta_analysis(slug: str) -> dict | None:
+    cache_key = f"ta:{slug}"
+    cached    = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    closes = _fetch_closes(slug)
+    if closes:
+        try:
+            result = _compute_ta(closes)
+            cache_set(cache_key, result)
+            _ta_stale[slug] = result
+            return result
+        except Exception as e:
+            logger.error(f"get_ta_analysis compute error ({slug}): {e}")
+
+    # Dacă fetch/calcul eșuează, returnează ultimul rezultat cunoscut
+    if slug in _ta_stale:
+        logger.info(f"get_ta_analysis: date stale pentru {slug}")
+        return _ta_stale[slug]
     return None
 
 # ─── FORMAT BUBBLES ────────────────────────────────────────────────────────────
