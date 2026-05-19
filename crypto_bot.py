@@ -129,16 +129,22 @@ def save_alerts() -> None:
 def create_jsonbin() -> str | None:
     """Creează un bin nou și returnează ID-ul. Rulează o singură dată."""
     try:
-        r = requests.post(JSONBIN_BASE,
-                          headers={**_jsonbin_headers(), "X-Bin-Name": "crypto-bot-alerts"},
-                          json={},
-                          timeout=10)
+        r = requests.post(
+            JSONBIN_BASE,
+            headers={
+                "X-Master-Key": JSONBIN_KEY,
+                "Content-Type": "application/json",
+                "X-Bin-Name": "crypto-bot-alerts",
+                "X-Private": "true",
+            },
+            json={},
+            timeout=10,
+        )
         if r.status_code == 200:
-            bin_id = r.json()["metadata"]["id"]
-            logger.info(f"JSONBin creat: {bin_id} — setează JSONBIN_BIN={bin_id} în Railway!")
-            return bin_id
+            return r.json()["metadata"]["id"]
+        print(f"  ❌ JSONBin create HTTP {r.status_code}: {r.text[:300]}")
     except Exception as e:
-        logger.error(f"create_jsonbin error: {e}")
+        print(f"  ❌ JSONBin create error: {e}")
     return None
 
 user_alerts: dict[int, list[dict]] = load_alerts()
@@ -1400,10 +1406,12 @@ def main():
     app.job_queue.run_daily(auto_trending_job, time=datetime.time(0,  5,  tzinfo=TZ_RO))
 
     if JSONBIN_KEY and not JSONBIN_BIN:
+        print("  ⏳ JSONBIN_BIN lipsă — creez bin automat...")
         new_id = create_jsonbin()
         if new_id:
-            print(f"  ⚠️  JSONBIN_BIN neconfigurat — bin creat automat: {new_id}")
-            print(f"      Setează în Railway: JSONBIN_BIN={new_id}")
+            print(f"  ✅ Bin creat! Setează în Railway: JSONBIN_BIN={new_id}")
+        else:
+            print("  ❌ Crearea bin-ului a eșuat. Verifică JSONBIN_KEY și încearcă din nou.")
 
     print("🤖 CryptoBot rulează cu suport Forum Topics.")
     print(f"  GROUP_CHAT_ID  : {GROUP_CHAT_ID   or 'neconfigurat'}")
