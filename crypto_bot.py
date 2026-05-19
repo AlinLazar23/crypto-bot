@@ -31,7 +31,6 @@ Commands:
     /start           - Bun venit
     /price BTC       - Preț live
     /top             - Top 10 după market cap
-    /trending        - Trending CoinGecko
     /bubbles         - Lista CryptoBubbles (1h/24h/7d/30d/1y)
     /stats           - Statistici piață + Market Score
     /alert BTC 70000 - Alertă de preț
@@ -84,7 +83,7 @@ TEXTS: dict[str, dict] = {
     "ro": {
         "topic_redirect":     "⚠️ Comenzile se trimit în topicul *Comenzi bot*.",
         "start_msg":          "👋 *Bun venit la CryptoBot!*\n\nDate live din CoinGecko.\n\nÎncearcă:\n• /price BTC\n• /bubbles 24h\n• /top\n• /alert BTC 70000\n",
-        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/bubbles — CryptoBubbles 24h\n/bubbles `1h|7d|30d|1y`\n\n/top — Top 10 după market cap\n\n/trending — Trending CoinGecko\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n📊 *Piață* — trending 12h\n📰 *Știri* — știri crypto\n📈 *Date & Analize* — stats 00:00/12:00\n🔔 *Predicții* — alerte de preț\n",
+        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/bubbles — CryptoBubbles 24h\n/bubbles `1h|7d|30d|1y`\n\n/top — Top 10 după market cap\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n📊 *Piață* — trending 12h\n📰 *Știri* — știri crypto\n📈 *Date & Analize* — stats 00:00/12:00\n🔔 *Predicții* — alerte de preț\n",
         "price_loading":      "⏳ Se încarcă datele...",
         "price_not_found":    "❌ *{coin}* nu a fost găsit.\nÎncearcă: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Folosire: `/price BTC`",
@@ -137,7 +136,7 @@ TEXTS: dict[str, dict] = {
     "en": {
         "topic_redirect":     "⚠️ Commands must be sent in the *Commands* topic.",
         "start_msg":          "👋 *Welcome to CryptoBot!*\n\nLive data from CoinGecko.\n\nTry:\n• /price BTC\n• /bubbles 24h\n• /top\n• /alert BTC 70000\n",
-        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/bubbles — CryptoBubbles 24h\n/bubbles `1h|7d|30d|1y`\n\n/top — Top 10 by market cap\n\n/trending — Trending on CoinGecko\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n📊 *Market* — auto trending 12h\n📰 *News* — crypto news\n📈 *Data & Analysis* — auto stats 00:00/12:00\n🔔 *Predictions* — price alerts\n",
+        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/bubbles — CryptoBubbles 24h\n/bubbles `1h|7d|30d|1y`\n\n/top — Top 10 by market cap\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n📊 *Market* — auto trending 12h\n📰 *News* — crypto news\n📈 *Data & Analysis* — auto stats 00:00/12:00\n🔔 *Predictions* — price alerts\n",
         "price_loading":      "⏳ Loading data...",
         "price_not_found":    "❌ *{coin}* not found.\nTry: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Usage: `/price BTC`",
@@ -844,7 +843,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     keyboard = [
         [InlineKeyboardButton("📊 Top 10",      callback_data="top"),
-         InlineKeyboardButton("🔥 Trending",    callback_data="trending")],
+         InlineKeyboardButton("📊 Stats",       callback_data="stats")],
         [InlineKeyboardButton("🫧 Bubbles 24h", callback_data="bubbles:24h"),
          InlineKeyboardButton("📊 Stats",       callback_data="stats")],
         [InlineKeyboardButton("🌐 Limba/Lang",  callback_data="lang"),
@@ -948,26 +947,6 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
         arrow = "▲" if chg >= 0 else "▼"
         lines.append(f"{i}. *{c['symbol']}* — {fmt_price(c['price'])}  {'🟢' if chg>=0 else '🔴'} {arrow}{abs(chg):.1f}%")
     keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="top")]]
-    await msg.edit_text("\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def cmd_trending(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
-    msg   = await update.message.reply_text(t(uid, "trending_loading"))
-    coins = get_trending_coins()
-    if not coins:
-        await msg.edit_text(t(uid, "top_no_data"))
-        return
-    lines = [t(uid, "trending_title")]
-    for item in coins[:7]:
-        c    = item["item"]
-        rank = c.get("market_cap_rank", "?")
-        chg  = c.get("change_24h", 0)
-        sign = "+" if chg >= 0 else ""
-        lines.append(f"• {c['name']} ({c['symbol']})  Rank #{rank}  {'🟢' if chg>=0 else '🔴'} {sign}{chg:.1f}%")
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
     await msg.edit_text("\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1118,18 +1097,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "trending":
-        coins = get_trending_coins()
-        lines = ["*🔥 Trending pe CoinGecko*\n"]
-        for item in coins[:7]:
-            c    = item["item"]
-            rank = c.get("market_cap_rank", "?")
-            chg  = c.get("change_24h", 0)
-            sign = "+" if chg >= 0 else ""
-            lines.append(f"• {c['name']} ({c['symbol']})  Rank #{rank}  {'🟢' if chg>=0 else '🔴'} {sign}{chg:.1f}%")
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
-        await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("bubbles:"):
         period = data.split(":", 1)[1]
@@ -1316,7 +1283,6 @@ def main():
     app.add_handler(CommandHandler("price",       cmd_price))
     app.add_handler(CommandHandler("bubbles",     cmd_bubbles))
     app.add_handler(CommandHandler("top",         cmd_top))
-    app.add_handler(CommandHandler("trending",    cmd_trending))
     app.add_handler(CommandHandler("stats",       cmd_stats))
 
     app.add_handler(CommandHandler("lang",        cmd_lang))
