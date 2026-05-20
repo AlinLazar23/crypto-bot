@@ -83,7 +83,7 @@ TEXTS: dict[str, dict] = {
     "ro": {
         "topic_redirect":     "⚠️ Comenzile se trimit în topicul *Comenzi bot*.",
         "start_msg":          "👋 *Bun venit la CryptoBot!*\n\nDate live din CoinGecko.\n\nÎncearcă:\n• /price BTC\n• /bubbles 24h\n• /top\n• /alert BTC 70000\n",
-        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/bubbles — CryptoBubbles 24h\n/bubbles `1h|7d|30d|1y`\n\n/top — Top 10 după market cap\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n📊 *Piață* — trending 12h\n📰 *Știri* — știri crypto\n📈 *Date & Analize* — stats 00:00/12:00\n🔔 *Predicții* — alerte de preț\n",
+        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/bubbles — CryptoBubbles 24h\n/bubbles `1h|7d|30d|1y`\n\n/top — Top 10 după market cap\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio — Portofoliul tău\n/portfolio add `<coin> <cantitate> [preț]`\n/portfolio remove `<coin>`\n\n/watchlist — Watchlist-ul tău\n/watchlist add `<coin>`\n/watchlist remove `<coin>`\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n📊 *Piață* — trending 12h\n📰 *Știri* — știri crypto\n📈 *Date & Analize* — stats 00:00/12:00\n🔔 *Predicții* — alerte de preț\n",
         "price_loading":      "⏳ Se încarcă datele...",
         "price_not_found":    "❌ *{coin}* nu a fost găsit.\nÎncearcă: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Folosire: `/price BTC`",
@@ -132,11 +132,25 @@ TEXTS: dict[str, dict] = {
         "fng_neutral":        "💡 Piața este neutră → așteaptă confirmare direcție",
         "fng_greed":          "⚠️ Lăcomie crescută → fii precaut, nu urmări FOMO",
         "fng_extreme_greed":  "🚨 Euforie extremă → risc ridicat de corecție",
+        "loading":            "⏳ Se încarcă...",
+        "portfolio_empty":    "📁 Portofoliul tău este gol.\nFolosește: `/portfolio add BTC 0.5 45000`",
+        "portfolio_added":    "✅ Adăugat: *{symbol}* \xd7{amount} la {price}",
+        "portfolio_removed":  "🗑 Șters din portofoliu: *{symbol}*",
+        "portfolio_not_found":"❌ *{symbol}* nu este în portofoliu.",
+        "portfolio_usage":    "Folosire:\n`/portfolio` — vezi portofoliu\n`/portfolio add BTC 0.5 45000` — adaugă\n`/portfolio remove BTC` — șterge",
+        "portfolio_title":    "📁 *Portofoliu*",
+        "watchlist_empty":    "👁 Watchlist-ul tău este gol.\nFolosește: `/watchlist add BTC`",
+        "watchlist_added":    "✅ *{symbol}* adăugat în watchlist.",
+        "watchlist_removed":  "🗑 *{symbol}* șters din watchlist.",
+        "watchlist_already":  "⚠️ *{symbol}* este deja în watchlist.",
+        "watchlist_not_found":"❌ *{symbol}* nu este în watchlist.",
+        "watchlist_usage":    "Folosire:\n`/watchlist` — vezi watchlist\n`/watchlist add BTC` — adaugă\n`/watchlist remove BTC` — șterge",
+        "watchlist_title":    "👁 *Watchlist*",
     },
     "en": {
         "topic_redirect":     "⚠️ Commands must be sent in the *Commands* topic.",
         "start_msg":          "👋 *Welcome to CryptoBot!*\n\nLive data from CoinGecko.\n\nTry:\n• /price BTC\n• /bubbles 24h\n• /top\n• /alert BTC 70000\n",
-        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/bubbles — CryptoBubbles 24h\n/bubbles `1h|7d|30d|1y`\n\n/top — Top 10 by market cap\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n📊 *Market* — auto trending 12h\n📰 *News* — crypto news\n📈 *Data & Analysis* — auto stats 00:00/12:00\n🔔 *Predictions* — price alerts\n",
+        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/bubbles — CryptoBubbles 24h\n/bubbles `1h|7d|30d|1y`\n\n/top — Top 10 by market cap\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/portfolio — Your portfolio\n/portfolio add `<coin> <amount> [price]`\n/portfolio remove `<coin>`\n\n/watchlist — Your watchlist\n/watchlist add `<coin>`\n/watchlist remove `<coin>`\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n📊 *Market* — auto trending 12h\n📰 *News* — crypto news\n📈 *Data & Analysis* — auto stats 00:00/12:00\n🔔 *Predictions* — price alerts\n",
         "price_loading":      "⏳ Loading data...",
         "price_not_found":    "❌ *{coin}* not found.\nTry: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Usage: `/price BTC`",
@@ -185,6 +199,20 @@ TEXTS: dict[str, dict] = {
         "fng_neutral":        "💡 Market is neutral → wait for direction confirmation",
         "fng_greed":          "⚠️ Greed increasing → be cautious, don't chase FOMO",
         "fng_extreme_greed":  "🚨 Extreme euphoria → high risk of correction",
+        "loading":            "⏳ Loading...",
+        "portfolio_empty":    "📁 Your portfolio is empty.\nUse: `/portfolio add BTC 0.5 45000`",
+        "portfolio_added":    "✅ Added: *{symbol}* \xd7{amount} at {price}",
+        "portfolio_removed":  "🗑 Removed from portfolio: *{symbol}*",
+        "portfolio_not_found":"❌ *{symbol}* is not in your portfolio.",
+        "portfolio_usage":    "Usage:\n`/portfolio` — view portfolio\n`/portfolio add BTC 0.5 45000` — add\n`/portfolio remove BTC` — remove",
+        "portfolio_title":    "📁 *Portfolio*",
+        "watchlist_empty":    "👁 Your watchlist is empty.\nUse: `/watchlist add BTC`",
+        "watchlist_added":    "✅ *{symbol}* added to watchlist.",
+        "watchlist_removed":  "🗑 *{symbol}* removed from watchlist.",
+        "watchlist_already":  "⚠️ *{symbol}* is already in watchlist.",
+        "watchlist_not_found":"❌ *{symbol}* is not in your watchlist.",
+        "watchlist_usage":    "Usage:\n`/watchlist` — view watchlist\n`/watchlist add BTC` — add\n`/watchlist remove BTC` — remove",
+        "watchlist_title":    "👁 *Watchlist*",
     },
 }
 
@@ -207,14 +235,18 @@ def _jsonbin_headers() -> dict:
     return {"X-Master-Key": JSONBIN_KEY, "Content-Type": "application/json"}
 
 def _build_payload() -> dict:
-    """Construiește payload-ul complet (alerte + limbi) pentru salvare."""
+    """Construiește payload-ul complet (alerte + limbi + portofolii + watchlists) pentru salvare."""
     payload = {str(k): v for k, v in user_alerts.items()}
     if user_lang:
         payload["__lang__"] = {str(k): v for k, v in user_lang.items()}
+    if user_portfolios:
+        payload["__portfolios__"] = {str(k): v for k, v in user_portfolios.items()}
+    if user_watchlists:
+        payload["__watchlists__"] = {str(k): v for k, v in user_watchlists.items()}
     return payload
 
-def load_data() -> tuple[dict[int, list[dict]], dict[int, str]]:
-    """Încarcă alertele și preferințele de limbă."""
+def load_data() -> tuple[dict, dict, dict, dict]:
+    """Încarcă alertele, limbile, portofoliile și watchlisturile."""
     raw = {}
     if JSONBIN_KEY and JSONBIN_BIN:
         try:
@@ -233,10 +265,14 @@ def load_data() -> tuple[dict[int, list[dict]], dict[int, str]]:
                 raw = json.load(f)
         except Exception as e:
             logger.error(f"load_data local error: {e}")
-    lang_raw   = raw.pop("__lang__", {})
-    alerts_out = {int(k): v for k, v in raw.items()}
-    lang_out   = {int(k): v for k, v in lang_raw.items()}
-    return alerts_out, lang_out
+    lang_raw       = raw.pop("__lang__", {})
+    portfolios_raw = raw.pop("__portfolios__", {})
+    watchlists_raw = raw.pop("__watchlists__", {})
+    alerts_out     = {int(k): v for k, v in raw.items()}
+    lang_out       = {int(k): v for k, v in lang_raw.items()}
+    portfolios_out = {int(k): v for k, v in portfolios_raw.items()}
+    watchlists_out = {int(k): v for k, v in watchlists_raw.items()}
+    return alerts_out, lang_out, portfolios_out, watchlists_out
 
 def save_alerts() -> None:
     payload = _build_payload()
@@ -257,8 +293,10 @@ def save_alerts() -> None:
         logger.error(f"save_alerts local error: {e}")
 
 
-_loaded_alerts, _loaded_lang = load_data()
-user_alerts: dict[int, list[dict]] = _loaded_alerts
+_loaded_alerts, _loaded_lang, _loaded_portfolios, _loaded_watchlists = load_data()
+user_alerts:     dict[int, list[dict]]      = _loaded_alerts
+user_portfolios: dict[int, dict[str, dict]] = _loaded_portfolios
+user_watchlists: dict[int, list[str]]       = _loaded_watchlists
 user_lang.update(_loaded_lang)
 
 # ─── CACHE (evită rate limiting CoinGecko) ─────────────────────────────────────
@@ -274,6 +312,69 @@ def cache_get(key: str):
 
 def cache_set(key: str, data):
     _cache[key] = (data, time.time())
+
+# ─── PORTFOLIO / WATCHLIST HELPERS ────────────────────────────────────────────
+
+def fmt_pct(value) -> str:
+    if value is None:
+        return "N/A"
+    sign  = "+" if value >= 0 else ""
+    emoji = "🟢" if value >= 0 else "🔴"
+    return f"{emoji} {sign}{value:.2f}%"
+
+def get_prices_batch(slugs: list[str]) -> dict:
+    if not slugs:
+        return {}
+    try:
+        r = requests.get(
+            f"{COINGECKO_BASE}/simple/price",
+            params={
+                "ids": ",".join(slugs),
+                "vs_currencies": "usd",
+                "include_24hr_change": "true",
+            },
+            timeout=12,
+        )
+        if r.status_code == 200:
+            return r.json()
+    except Exception as e:
+        logger.error(f"get_prices_batch error: {e}")
+    return {}
+
+def calculate_portfolio(portfolio: dict) -> dict | None:
+    if not portfolio:
+        return None
+    slugs = [info.get("slug") or resolve_slug(sym) for sym, info in portfolio.items()]
+    prices_data = get_prices_batch([s for s in slugs if s])
+    coins_data  = []
+    total_value = total_invested = 0.0
+    for (symbol, info), slug in zip(portfolio.items(), slugs):
+        if not slug:
+            continue
+        pd        = prices_data.get(slug, {})
+        cur_price = pd.get("usd", 0)
+        change_24 = pd.get("usd_24h_change", 0)
+        amount    = float(info.get("amount", 0))
+        buy_price = float(info.get("buy_price", 0))
+        cur_val   = amount * cur_price
+        invested  = amount * buy_price
+        pnl       = cur_val - invested
+        pnl_pct   = ((cur_price - buy_price) / buy_price * 100) if buy_price > 0 else 0
+        total_value    += cur_val
+        total_invested += invested
+        coins_data.append({
+            "symbol": symbol, "amount": amount,
+            "buy_price": buy_price, "current_price": cur_price,
+            "current_value": cur_val, "invested": invested,
+            "pnl": pnl, "pnl_pct": pnl_pct, "change_24h": change_24,
+        })
+    total_pnl     = total_value - total_invested
+    total_pnl_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0
+    return {
+        "coins": coins_data, "total_value": total_value,
+        "total_invested": total_invested, "total_pnl": total_pnl,
+        "total_pnl_pct": total_pnl_pct,
+    }
 
 # ─── TOPIC ROUTING ─────────────────────────────────────────────────────────────
 
@@ -1058,6 +1159,132 @@ async def cmd_removealert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except (ValueError, IndexError):
         await update.message.reply_text(t(uid, "removealert_bad"))
 
+async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid  = update.effective_user.id
+    if not is_in_correct_topic(update):
+        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
+        return
+    args = context.args
+
+    portfolio = user_portfolios.setdefault(uid, {})
+
+    if args and args[0].lower() == "add":
+        if len(args) < 3:
+            await update.message.reply_text(t(uid, "portfolio_usage"), parse_mode="Markdown")
+            return
+        symbol = args[1].upper()
+        try:
+            amount    = float(args[2])
+            buy_price = float(args[3]) if len(args) > 3 else 0.0
+        except ValueError:
+            await update.message.reply_text("❌ Număr invalid.", parse_mode="Markdown")
+            return
+        slug = resolve_slug(symbol)
+        portfolio[symbol] = {"slug": slug, "amount": amount, "buy_price": buy_price}
+        save_alerts()
+        await update.message.reply_text(
+            t(uid, "portfolio_added", symbol=symbol, amount=amount, price=fmt_price(buy_price)),
+            parse_mode="Markdown")
+        return
+
+    if args and args[0].lower() == "remove":
+        if len(args) < 2:
+            await update.message.reply_text(t(uid, "portfolio_usage"), parse_mode="Markdown")
+            return
+        symbol = args[1].upper()
+        if symbol not in portfolio:
+            await update.message.reply_text(t(uid, "portfolio_not_found", symbol=symbol), parse_mode="Markdown")
+            return
+        del portfolio[symbol]
+        save_alerts()
+        await update.message.reply_text(t(uid, "portfolio_removed", symbol=symbol), parse_mode="Markdown")
+        return
+
+    if not portfolio:
+        await update.message.reply_text(t(uid, "portfolio_empty"), parse_mode="Markdown")
+        return
+
+    msg = await update.message.reply_text(t(uid, "loading"))
+    pf  = calculate_portfolio(portfolio)
+    if not pf or not pf["coins"]:
+        await msg.edit_text("❌ Nu s-au putut obține prețurile.")
+        return
+
+    lines = [t(uid, "portfolio_title"), "━" * 20, ""]
+    for c in pf["coins"]:
+        alloc = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
+        lines.append(
+            f"*{c['symbol']}* — {fmt_price(c['current_price'])}\n"
+            f"  Cantitate: `{c['amount']}`  |  Valoare: `{fmt_price(c['current_value'])}`\n"
+            f"  Cumpărat: `{fmt_price(c['buy_price'])}`  |  24h: {fmt_pct(c['change_24h'])}\n"
+            f"  P&L: `{fmt_price(c['pnl'])}` ({fmt_pct(c['pnl_pct'])})  |  Alocare: `{alloc:.1f}%`\n"
+        )
+    pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
+    lines += [
+        "━" * 20,
+        f"💼 *Total valoare:* `{fmt_price(pf['total_value'])}`",
+        f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
+        f"{pnl_emoji} *P&L total:*     `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})",
+    ]
+    await msg.edit_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid  = update.effective_user.id
+    if not is_in_correct_topic(update):
+        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
+        return
+    args = context.args
+
+    watchlist = user_watchlists.setdefault(uid, [])
+
+    if args and args[0].lower() == "add":
+        if len(args) < 2:
+            await update.message.reply_text(t(uid, "watchlist_usage"), parse_mode="Markdown")
+            return
+        symbol = args[1].upper()
+        if symbol in watchlist:
+            await update.message.reply_text(t(uid, "watchlist_already", symbol=symbol), parse_mode="Markdown")
+            return
+        watchlist.append(symbol)
+        save_alerts()
+        await update.message.reply_text(t(uid, "watchlist_added", symbol=symbol), parse_mode="Markdown")
+        return
+
+    if args and args[0].lower() == "remove":
+        if len(args) < 2:
+            await update.message.reply_text(t(uid, "watchlist_usage"), parse_mode="Markdown")
+            return
+        symbol = args[1].upper()
+        if symbol not in watchlist:
+            await update.message.reply_text(t(uid, "watchlist_not_found", symbol=symbol), parse_mode="Markdown")
+            return
+        watchlist.remove(symbol)
+        save_alerts()
+        await update.message.reply_text(t(uid, "watchlist_removed", symbol=symbol), parse_mode="Markdown")
+        return
+
+    if not watchlist:
+        await update.message.reply_text(t(uid, "watchlist_empty"), parse_mode="Markdown")
+        return
+
+    msg   = await update.message.reply_text(t(uid, "loading"))
+    slugs = [resolve_slug(s) for s in watchlist]
+    prices_data = get_prices_batch([s for s in slugs if s])
+
+    lines = [t(uid, "watchlist_title"), "━" * 20, ""]
+    for symbol, slug in zip(watchlist, slugs):
+        pd = prices_data.get(slug, {}) if slug else {}
+        if pd:
+            price  = pd.get("usd", 0)
+            chg    = pd.get("usd_24h_change", 0)
+            lines.append(f"• *{symbol}*: `{fmt_price(price)}`  {fmt_pct(chg)}")
+        else:
+            lines.append(f"• *{symbol}*: N/A")
+
+    await msg.edit_text("\n".join(lines), parse_mode="Markdown")
+
+
 async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if OWNER_ID and uid != OWNER_ID:
@@ -1304,6 +1531,8 @@ def main():
     app.add_handler(CommandHandler("alert",       cmd_alert))
     app.add_handler(CommandHandler("myalerts",    cmd_myalerts))
     app.add_handler(CommandHandler("removealert", cmd_removealert))
+    app.add_handler(CommandHandler("portfolio",   cmd_portfolio))
+    app.add_handler(CommandHandler("watchlist",   cmd_watchlist))
     app.add_handler(CallbackQueryHandler(button_callback))
 
     app.job_queue.run_repeating(check_alerts,      interval=CHECK_ALERTS_INTERVAL, first=10)
