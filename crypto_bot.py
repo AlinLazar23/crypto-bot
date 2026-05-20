@@ -325,20 +325,27 @@ def fmt_pct(value) -> str:
 def get_prices_batch(slugs: list[str]) -> dict:
     if not slugs:
         return {}
-    try:
-        r = requests.get(
-            f"{COINGECKO_BASE}/simple/price",
-            params={
-                "ids": ",".join(slugs),
-                "vs_currencies": "usd",
-                "include_24hr_change": "true",
-            },
-            timeout=12,
-        )
-        if r.status_code == 200:
-            return r.json()
-    except Exception as e:
-        logger.error(f"get_prices_batch error: {e}")
+    for attempt in range(3):
+        if attempt > 0:
+            time.sleep(5)
+        try:
+            r = requests.get(
+                f"{COINGECKO_BASE}/simple/price",
+                params={
+                    "ids": ",".join(slugs),
+                    "vs_currencies": "usd",
+                    "include_24hr_change": "true",
+                },
+                headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
+                timeout=12,
+            )
+            if r.status_code == 200:
+                return r.json()
+            if r.status_code == 429:
+                time.sleep(int(r.headers.get("Retry-After", 15)))
+            logger.warning(f"get_prices_batch HTTP {r.status_code} (attempt {attempt + 1})")
+        except Exception as e:
+            logger.error(f"get_prices_batch error: {e}")
     return {}
 
 def calculate_portfolio(portfolio: dict) -> dict | None:
@@ -1205,7 +1212,7 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     msg = await update.message.reply_text(t(uid, "loading"))
-    pf  = calculate_portfolio(portfolio)
+    pf  = await asyncio.to_thread(calculate_portfolio, portfolio)
     if not pf or not pf["coins"]:
         await msg.edit_text("❌ Nu s-au putut obține prețurile.")
         return
@@ -1270,7 +1277,7 @@ async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg   = await update.message.reply_text(t(uid, "loading"))
     slugs = [resolve_slug(s) for s in watchlist]
-    prices_data = get_prices_batch([s for s in slugs if s])
+    prices_data = await asyncio.to_thread(get_prices_batch, [s for s in slugs if s])
 
     lines = [t(uid, "watchlist_title"), "━" * 20, ""]
     for symbol, slug in zip(watchlist, slugs):
