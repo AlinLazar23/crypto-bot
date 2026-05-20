@@ -1,5 +1,6 @@
 """
 Crypto Market Updates Telegram Bot
+
 ====================================
 Surse: CoinGecko (toate datele) + TradingView (analiză)
 Fără API key necesar! Funcționează în orice regiune.
