@@ -1,74 +1,43 @@
 """
-Crypto Market Updates Telegram Bot
-====================================
-Surse: CoinGecko (toate datele) + TradingView (analiză)
-Fără API key necesar! Funcționează în orice regiune.
+Advanced Personal Crypto Bot
+==============================
+Features:
+- Personal portfolio tracking with P&L
+- Whale tracker (large transactions)
+- Daily personalized report
+- EMA crossover alerts
+- Multi-language (RO/EN)
+- Per-user settings
 
 Requirements:
-    pip install python-telegram-bot[job-queue] requests tradingview-ta pytz
-
-Setup:
-    1. Creează bot via @BotFather → copiază BOT_TOKEN
-    2. Setează variabilele de mediu (Railway / .env):
-       BOT_TOKEN, GROUP_CHAT_ID,
-       TOPIC_COMENZI, TOPIC_PIATA, TOPIC_STIRI,
-       TOPIC_DATE, TOPIC_PREDICTII
-    3. (Opțional) CRYPTOPANIC_TOKEN pentru știri automate
-
-Cum obții Thread ID-urile topicurilor:
-    1. Adaugă botul în grup ca Admin
-    2. Scrie /chatid în fiecare topic
-    3. Setează valorile în Railway env vars
-
-Roluri topicuri:
-    Comenzi bot   ← singura zonă unde funcționează comenzile user
-    Piață         ← trending automat la 12h
-    Știri         ← feed știri crypto (dacă CRYPTOPANIC_TOKEN setat)
-    Date & Analize← stats automat la 00:00 și 12:00
-    Predicții     ← alerte de preț automate
-
-Commands:
-    /start           - Bun venit
-    /price BTC       - Preț live
-    /top             - Top 10 după market cap
-    /bubbles         - Lista CryptoBubbles (1h/24h/7d/30d/1y)
-    /stats           - Statistici piață + Market Score
-    /alert BTC 70000 - Alertă de preț
-    /myalerts        - Alertele tale
-    /removealert 1   - Șterge alertă
-    /help            - Ajutor
+    pip install python-telegram-bot[job-queue] requests pytz
 """
 
 import os
 import json
-import asyncio
 import time
-import datetime
-import pytz
+import asyncio
 import logging
+import datetime
 import requests
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import pytz
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
+    MessageHandler,
+    filters,
     ContextTypes,
 )
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
-BOT_TOKEN         = os.environ.get("BOT_TOKEN", "")
-COINGECKO_BASE    = "https://api.coingecko.com/api/v3"
-CRYPTOPANIC_TOKEN = os.environ.get("CRYPTOPANIC_TOKEN", "")
-
-GROUP_CHAT_ID   = int(os.environ.get("GROUP_CHAT_ID",    "0"))
-TOPIC_COMENZI   = int(os.environ.get("TOPIC_COMENZI",   "0"))
-TOPIC_PIATA     = int(os.environ.get("TOPIC_PIATA",     "0"))
-TOPIC_STIRI     = int(os.environ.get("TOPIC_STIRI",     "0"))
-TOPIC_DATE      = int(os.environ.get("TOPIC_DATE",      "0"))
-TOPIC_PREDICTII = int(os.environ.get("TOPIC_PREDICTII", "0"))
-
-CHECK_ALERTS_INTERVAL = 60
-TZ_RO = pytz.timezone("Europe/Bucharest")
+BOT_TOKEN      = os.environ.get("BOT_TOKEN", "")
+COINGECKO_BASE = "https://api.coingecko.com/api/v3"
+DATA_DIR       = "/data" if os.path.isdir("/data") else "."
+DATA_FILE      = os.path.join(DATA_DIR, "user_data.json")
+CHECK_INTERVAL = 60
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -77,528 +46,409 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ─── TRANSLATIONS ──────────────────────────────────────────────────────────────
-user_lang: dict[int, str] = {}  # populat după load_data()
-
-TEXTS: dict[str, dict] = {
+T = {
     "ro": {
-        "topic_redirect":     "⚠️ Comenzile se trimit în topicul *Comenzi bot*.",
-        "start_msg":          "👋 *Bun venit la CryptoBot!*\n\nDate live din CoinGecko.\n\nÎncearcă:\n• /price BTC\n• /bubbles 24h\n• /top\n• /alert BTC 70000\n",
-        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/bubbles — CryptoBubbles 24h\n/bubbles `1h|7d|30d|1y`\n\n/top — Top 10 după market cap\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio — Portofoliul tău\n/portfolio add `<coin> <cantitate> [preț]`\n/portfolio remove `<coin>`\n\n/watchlist — Watchlist-ul tău\n/watchlist add `<coin>`\n/watchlist remove `<coin>`\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n📊 *Piață* — trending 12h\n📰 *Știri* — știri crypto\n📈 *Date & Analize* — stats 00:00/12:00\n🔔 *Predicții* — alerte de preț\n",
-        "price_loading":      "⏳ Se încarcă datele...",
-        "price_not_found":    "❌ *{coin}* nu a fost găsit.\nÎncearcă: `/price BTC`, `/price ETH`, `/price bitcoin`",
-        "price_usage":        "Folosire: `/price BTC`",
-        "top_loading":        "⏳ Se încarcă top 10...",
-        "top_title":          "*🏆 Top 10 după Market Cap*\n",
-        "top_no_data":        "❌ Nu s-au putut obține datele.",
-        "trending_loading":   "⏳ Se încarcă trending...",
-        "trending_title":     "*🔥 Trending pe CoinGecko*\n",
-        "bubbles_loading":    "⏳ Se încarcă CryptoBubbles ({period})...",
-        "bubbles_usage":      "Folosire: `/bubbles 24h`\nOpțiuni: `1h`, `24h`, `7d`, `30d`, `1y`",
-        "bubbles_no_data":    "❌ Nu s-au putut obține datele.",
-        "bubbles_header":     "🫧 *CryptoBubbles — {label}*\n_{n} monede sortate după performanță_\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
-        "bubbles_cont":       "🫧 *CryptoBubbles — {label}* _(continuare)_\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
-        "period_labels":      {"1h": "1 Oră", "24h": "24 Ore", "7d": "7 Zile", "30d": "30 Zile", "1y": "1 An"},
-        "stats_loading":      "⏳ Se calculează statisticile pieței...",
-        "stats_no_data":      "❌ Nu s-au putut obține datele. Încearcă din nou în 1 minut.",
-        "stats_sentiment":    "🧠 *SENTIMENT PIAȚĂ*",
-        "stats_vs_yesterday": "Față de ieri",
-        "stats_week_avg":     "Media 7 zile",
-        "stats_overview":     "💰 *OVERVIEW PIAȚĂ*",
-        "stats_mktcap":       "Mkt Cap Total",
-        "stats_volume":       "Volum 24h",
-        "stats_insight":      "🔬 *INSIGHT AUTOMAT*",
-        "stats_score_label":  "Bazat pe: sentiment + trend + volum + dominance",
-        "alert_usage":        "Folosire: `/alert BTC 70000`",
-        "alert_invalid":      "❌ Preț invalid.",
-        "alert_loading":      "⏳ Se caută *{coin}*...",
-        "alert_not_found":    "❌ *{coin}* nu a fost găsit.",
-        "alert_set":          "✅ Alertă setată: *{name}* {arrow} {price}\n_(Preț curent: {current})_\n_Notificarea va apărea în topicul Predicții._",
-        "alert_rise":         "📈 crește până la",
-        "alert_fall":         "📉 scade până la",
-        "myalerts_none":      "Nu ai alerte active. Folosește `/alert` pentru a seta una.",
-        "myalerts_title":     "*Alertele tale*\n",
-        "myalerts_footer":    "\nFolosește `/removealert <număr>` pentru a șterge.",
-        "removealert_none":   "Nu ai alerte de șters.",
-        "removealert_usage":  "Folosire: `/removealert 1`",
-        "removealert_done":   "🗑 Alertă ștearsă: *{name}* @ {price}",
-        "removealert_bad":    "❌ Număr invalid. Folosește /myalerts.",
-        "alert_triggered":    "🔔 *Alertă de preț activată!*\n\n*{name}* ({symbol}) a {verb} {price}\nȚinta ta era: {target}",
-        "alert_rose":         "crescut la",
-        "alert_fell":         "scăzut la",
-        "lang_prompt":        "🌐 *Selectează limba / Select language:*",
-        "lang_set":           "✅ Limbă setată: *Română* 🇷🇴",
-        "fng_extreme_fear":   "💡 Panică extremă → zonă istorică de acumulare",
-        "fng_fear":           "💡 Frică în piață → posibilă oportunitate de cumpărare",
-        "fng_neutral":        "💡 Piața este neutră → așteaptă confirmare direcție",
-        "fng_greed":          "⚠️ Lăcomie crescută → fii precaut, nu urmări FOMO",
-        "fng_extreme_greed":  "🚨 Euforie extremă → risc ridicat de corecție",
-        "loading":            "⏳ Se încarcă...",
-        "portfolio_empty":    "📁 Portofoliul tău este gol.\nFolosește: `/portfolio add BTC 0.5 45000`",
-        "portfolio_added":    "✅ Adăugat: *{symbol}* \xd7{amount} la {price}",
-        "portfolio_removed":  "🗑 Șters din portofoliu: *{symbol}*",
-        "portfolio_not_found":"❌ *{symbol}* nu este în portofoliu.",
-        "portfolio_usage":    "Folosire:\n`/portfolio` — vezi portofoliu\n`/portfolio add BTC 0.5 45000` — adaugă\n`/portfolio remove BTC` — șterge",
-        "portfolio_title":    "📁 *Portofoliu*",
-        "watchlist_empty":    "👁 Watchlist-ul tău este gol.\nFolosește: `/watchlist add BTC`",
-        "watchlist_added":    "✅ *{symbol}* adăugat în watchlist.",
-        "watchlist_removed":  "🗑 *{symbol}* șters din watchlist.",
-        "watchlist_already":  "⚠️ *{symbol}* este deja în watchlist.",
-        "watchlist_not_found":"❌ *{symbol}* nu este în watchlist.",
-        "watchlist_usage":    "Folosire:\n`/watchlist` — vezi watchlist\n`/watchlist add BTC` — adaugă\n`/watchlist remove BTC` — șterge",
-        "watchlist_title":    "👁 *Watchlist*",
+        "welcome":            "Bun venit la CryptoPersonal Bot!\n\nBotul tau personal de crypto cu portofoliu, alerte tehnice si rapoarte zilnice.\n\nApasa /help pentru comenzi.",
+        "portfolio_empty":    "Portofoliul tau este gol.\nFoloseste /portfolio add BTC 0.5 45000",
+        "portfolio_added":    "Adaugat in portofoliu: {} {} la pretul de {}",
+        "portfolio_removed":  "Sters din portofoliu: {}",
+        "portfolio_not_found":"{} nu este in portofoliu.",
+        "watchlist_empty":    "Watchlist-ul tau este gol.\nFoloseste /watchlist add BTC",
+        "watchlist_added":    "{} adaugat in watchlist.",
+        "watchlist_removed":  "{} sters din watchlist.",
+        "loading":            "Se incarca...",
+        "no_data":            "Nu s-au putut obtine datele. Incearca din nou.",
+        "lang_set":           "Limba setata: Romana",
+        "currency_set":       "Moneda setata: {}",
+        "report_set":         "Raportul zilnic va fi trimis la {}",
+        "report_title":       "Raport Zilnic Personal",
+        "alert_fear_set":     "Alerta Fear & Greed setata: sub {}",
+        "alerts_empty":       "Nu ai alerte active.",
+        "pnl_empty":          "Nu ai monede in portofoliu pentru P&L.",
     },
     "en": {
-        "topic_redirect":     "⚠️ Commands must be sent in the *Commands* topic.",
-        "start_msg":          "👋 *Welcome to CryptoBot!*\n\nLive data from CoinGecko.\n\nTry:\n• /price BTC\n• /bubbles 24h\n• /top\n• /alert BTC 70000\n",
-        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/bubbles — CryptoBubbles 24h\n/bubbles `1h|7d|30d|1y`\n\n/top — Top 10 by market cap\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/portfolio — Your portfolio\n/portfolio add `<coin> <amount> [price]`\n/portfolio remove `<coin>`\n\n/watchlist — Your watchlist\n/watchlist add `<coin>`\n/watchlist remove `<coin>`\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n📊 *Market* — auto trending 12h\n📰 *News* — crypto news\n📈 *Data & Analysis* — auto stats 00:00/12:00\n🔔 *Predictions* — price alerts\n",
-        "price_loading":      "⏳ Loading data...",
-        "price_not_found":    "❌ *{coin}* not found.\nTry: `/price BTC`, `/price ETH`, `/price bitcoin`",
-        "price_usage":        "Usage: `/price BTC`",
-        "top_loading":        "⏳ Loading top 10...",
-        "top_title":          "*🏆 Top 10 by Market Cap*\n",
-        "top_no_data":        "❌ Could not fetch data.",
-        "trending_loading":   "⏳ Loading trending...",
-        "trending_title":     "*🔥 Trending on CoinGecko*\n",
-        "bubbles_loading":    "⏳ Loading CryptoBubbles ({period})...",
-        "bubbles_usage":      "Usage: `/bubbles 24h`\nOptions: `1h`, `24h`, `7d`, `30d`, `1y`",
-        "bubbles_no_data":    "❌ Could not fetch data.",
-        "bubbles_header":     "🫧 *CryptoBubbles — {label}*\n_{n} coins sorted by performance_\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
-        "bubbles_cont":       "🫧 *CryptoBubbles — {label}* _(continued)_\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
-        "period_labels":      {"1h": "1 Hour", "24h": "24 Hours", "7d": "7 Days", "30d": "30 Days", "1y": "1 Year"},
-        "stats_loading":      "⏳ Calculating market statistics...",
-        "stats_no_data":      "❌ Could not fetch data. Try again in 1 minute.",
-        "stats_sentiment":    "🧠 *MARKET SENTIMENT*",
-        "stats_vs_yesterday": "vs. yesterday",
-        "stats_week_avg":     "7 day avg",
-        "stats_overview":     "💰 *MARKET OVERVIEW*",
-        "stats_mktcap":       "Total Mkt Cap",
-        "stats_volume":       "24h Volume",
-        "stats_insight":      "🔬 *AUTO INSIGHT*",
-        "stats_score_label":  "Based on: sentiment + trend + volume + dominance",
-        "alert_usage":        "Usage: `/alert BTC 70000`",
-        "alert_invalid":      "❌ Invalid price.",
-        "alert_loading":      "⏳ Searching *{coin}*...",
-        "alert_not_found":    "❌ *{coin}* not found.",
-        "alert_set":          "✅ Alert set: *{name}* {arrow} {price}\n_(Current price: {current})_\n_Notification will appear in the Predictions topic._",
-        "alert_rise":         "📈 rises to",
-        "alert_fall":         "📉 falls to",
-        "myalerts_none":      "No active alerts. Use `/alert` to set one.",
-        "myalerts_title":     "*Your alerts*\n",
-        "myalerts_footer":    "\nUse `/removealert <number>` to delete.",
-        "removealert_none":   "No alerts to delete.",
-        "removealert_usage":  "Usage: `/removealert 1`",
-        "removealert_done":   "🗑 Alert deleted: *{name}* @ {price}",
-        "removealert_bad":    "❌ Invalid number. Use /myalerts.",
-        "alert_triggered":    "🔔 *Price alert triggered!*\n\n*{name}* ({symbol}) has {verb} {price}\nYour target was: {target}",
-        "alert_rose":         "risen to",
-        "alert_fell":         "fallen to",
-        "lang_prompt":        "🌐 *Selectează limba / Select language:*",
-        "lang_set":           "✅ Language set: *English* 🇬🇧",
-        "fng_extreme_fear":   "💡 Extreme fear → historic accumulation zone",
-        "fng_fear":           "💡 Fear in market → possible buying opportunity",
-        "fng_neutral":        "💡 Market is neutral → wait for direction confirmation",
-        "fng_greed":          "⚠️ Greed increasing → be cautious, don't chase FOMO",
-        "fng_extreme_greed":  "🚨 Extreme euphoria → high risk of correction",
-        "loading":            "⏳ Loading...",
-        "portfolio_empty":    "📁 Your portfolio is empty.\nUse: `/portfolio add BTC 0.5 45000`",
-        "portfolio_added":    "✅ Added: *{symbol}* \xd7{amount} at {price}",
-        "portfolio_removed":  "🗑 Removed from portfolio: *{symbol}*",
-        "portfolio_not_found":"❌ *{symbol}* is not in your portfolio.",
-        "portfolio_usage":    "Usage:\n`/portfolio` — view portfolio\n`/portfolio add BTC 0.5 45000` — add\n`/portfolio remove BTC` — remove",
-        "portfolio_title":    "📁 *Portfolio*",
-        "watchlist_empty":    "👁 Your watchlist is empty.\nUse: `/watchlist add BTC`",
-        "watchlist_added":    "✅ *{symbol}* added to watchlist.",
-        "watchlist_removed":  "🗑 *{symbol}* removed from watchlist.",
-        "watchlist_already":  "⚠️ *{symbol}* is already in watchlist.",
-        "watchlist_not_found":"❌ *{symbol}* is not in your watchlist.",
-        "watchlist_usage":    "Usage:\n`/watchlist` — view watchlist\n`/watchlist add BTC` — add\n`/watchlist remove BTC` — remove",
-        "watchlist_title":    "👁 *Watchlist*",
-    },
+        "welcome":            "Welcome to CryptoPersonal Bot!\n\nYour personal crypto bot with portfolio tracking, technical alerts and daily reports.\n\nPress /help for commands.",
+        "portfolio_empty":    "Your portfolio is empty.\nUse /portfolio add BTC 0.5 45000",
+        "portfolio_added":    "Added to portfolio: {} {} at {}",
+        "portfolio_removed":  "Removed from portfolio: {}",
+        "portfolio_not_found":"{} is not in your portfolio.",
+        "watchlist_empty":    "Your watchlist is empty.\nUse /watchlist add BTC",
+        "watchlist_added":    "{} added to watchlist.",
+        "watchlist_removed":  "{} removed from watchlist.",
+        "loading":            "Loading...",
+        "no_data":            "Could not fetch data. Try again.",
+        "lang_set":           "Language set: English",
+        "currency_set":       "Currency set: {}",
+        "report_set":         "Daily report will be sent at {}",
+        "report_title":       "Daily Personal Report",
+        "alert_fear_set":     "Fear & Greed alert set: below {}",
+        "alerts_empty":       "You have no active alerts.",
+        "pnl_empty":          "No coins in portfolio for P&L.",
+    }
 }
 
-def gl(uid: int) -> str:
-    return user_lang.get(uid, "ro")
-
-def t(uid: int, key: str, **kw) -> str:
-    lang = gl(uid)
-    val  = TEXTS.get(lang, TEXTS["ro"]).get(key) or TEXTS["ro"].get(key, key)
-    return val.format(**kw) if kw else val
-
-# ─── PERSISTENT ALERTS ─────────────────────────────────────────────────────────
-ALERTS_FILE   = os.path.join("/data" if os.path.isdir("/data") else ".", "alerts.json")
-JSONBIN_KEY   = os.environ.get("JSONBIN_KEY", "")
-OWNER_ID      = int(os.environ.get("OWNER_ID", "0"))
-JSONBIN_BIN   = os.environ.get("JSONBIN_BIN", "")
-JSONBIN_BASE  = "https://api.jsonbin.io/v3/b"
-
-def _jsonbin_headers() -> dict:
-    return {"X-Master-Key": JSONBIN_KEY, "Content-Type": "application/json"}
-
-def _build_payload() -> dict:
-    """Construiește payload-ul complet (alerte + limbi + portofolii + watchlists) pentru salvare."""
-    payload = {str(k): v for k, v in user_alerts.items()}
-    if user_lang:
-        payload["__lang__"] = {str(k): v for k, v in user_lang.items()}
-    if user_portfolios:
-        payload["__portfolios__"] = {str(k): v for k, v in user_portfolios.items()}
-    if user_watchlists:
-        payload["__watchlists__"] = {str(k): v for k, v in user_watchlists.items()}
-    return payload
-
-def load_data() -> tuple[dict, dict, dict, dict]:
-    """Încarcă alertele, limbile, portofoliile și watchlisturile."""
-    raw = {}
-    if JSONBIN_KEY and JSONBIN_BIN:
+def t(uid, key, *args):
+    lang = get_user(uid).get("lang", "ro")
+    text = T.get(lang, T["ro"]).get(key, key)
+    if args:
         try:
-            r = requests.get(f"{JSONBIN_BASE}/{JSONBIN_BIN}/latest",
-                             headers=_jsonbin_headers(), timeout=10)
+            text = text.format(*args)
+        except Exception:
+            pass
+    return text
+
+# ─── USER DATA ─────────────────────────────────────────────────────────────────
+
+JSONBIN_API_KEY = os.environ.get("JSONBIN_API_KEY", "")
+JSONBIN_BIN_ID  = os.environ.get("JSONBIN_BIN_ID", "")
+JSONBIN_URL     = "https://api.jsonbin.io/v3/b/"
+
+def load_data():
+    if JSONBIN_API_KEY and JSONBIN_BIN_ID:
+        try:
+            r = requests.get(
+                JSONBIN_URL + JSONBIN_BIN_ID + "/latest",
+                headers={"X-Master-Key": JSONBIN_API_KEY},
+                timeout=10,
+            )
             if r.status_code == 200:
                 raw = r.json().get("record", {})
-                logger.info("Date încărcate din JSONBin.")
-            else:
-                logger.warning(f"load_data JSONBin HTTP {r.status_code}")
+                logger.info("Data loaded from JSONBin")
+                return {int(k): v for k, v in raw.items() if k != "init"}
         except Exception as e:
-            logger.error(f"load_data JSONBin error: {e}")
-    if not raw and os.path.exists(ALERTS_FILE):
+            logger.error("JSONBin load error: " + str(e))
+    if os.path.exists(DATA_FILE):
         try:
-            with open(ALERTS_FILE, "r") as f:
+            with open(DATA_FILE, "r") as f:
                 raw = json.load(f)
+            return {int(k): v for k, v in raw.items()}
         except Exception as e:
-            logger.error(f"load_data local error: {e}")
-    lang_raw       = raw.pop("__lang__", {})
-    portfolios_raw = raw.pop("__portfolios__", {})
-    watchlists_raw = raw.pop("__watchlists__", {})
-    alerts_out     = {int(k): v for k, v in raw.items()}
-    lang_out       = {int(k): v for k, v in lang_raw.items()}
-    portfolios_out = {int(k): v for k, v in portfolios_raw.items()}
-    watchlists_out = {int(k): v for k, v in watchlists_raw.items()}
-    return alerts_out, lang_out, portfolios_out, watchlists_out
+            logger.error("load_data error: " + str(e))
+    return {}
 
-def save_alerts() -> None:
-    payload = _build_payload()
-    if JSONBIN_KEY and JSONBIN_BIN:
+def save_data():
+    if JSONBIN_API_KEY and JSONBIN_BIN_ID:
         try:
-            r = requests.put(f"{JSONBIN_BASE}/{JSONBIN_BIN}",
-                             headers=_jsonbin_headers(),
-                             json=payload, timeout=10)
+            r = requests.put(
+                JSONBIN_URL + JSONBIN_BIN_ID,
+                json=user_data,
+                headers={
+                    "X-Master-Key": JSONBIN_API_KEY,
+                    "Content-Type": "application/json",
+                },
+                timeout=10,
+            )
             if r.status_code == 200:
                 return
-            logger.warning(f"save_alerts JSONBin HTTP {r.status_code}")
+            logger.error("JSONBin save error: " + str(r.status_code))
         except Exception as e:
-            logger.error(f"save_alerts JSONBin error: {e}")
+            logger.error("JSONBin save error: " + str(e))
     try:
-        with open(ALERTS_FILE, "w") as f:
-            json.dump(payload, f, indent=2)
+        with open(DATA_FILE, "w") as f:
+            json.dump(user_data, f, indent=2)
     except Exception as e:
-        logger.error(f"save_alerts local error: {e}")
+        logger.error("save_data error: " + str(e))
 
+user_data = load_data()
 
-_loaded_alerts, _loaded_lang, _loaded_portfolios, _loaded_watchlists = load_data()
-user_alerts:     dict[int, list[dict]]      = _loaded_alerts
-user_portfolios: dict[int, dict[str, dict]] = _loaded_portfolios
-user_watchlists: dict[int, list[str]]       = _loaded_watchlists
-user_lang.update(_loaded_lang)
+def get_user(uid):
+    uid = int(uid)
+    if uid not in user_data:
+        user_data[uid] = {
+            "lang":           "ro",
+            "currency":       "USD",
+            "portfolio":      {},
+            "watchlist":      [],
+            "alerts":         {"ema": {}, "fear": None},
+            "report_time":    "08:00",
+            "report_enabled": True,
+        }
+    # Ensure alerts structure exists
+    if "alerts" not in user_data[uid]:
+        user_data[uid]["alerts"] = {"ema": {}, "fear": None}
+    if "ema" not in user_data[uid]["alerts"]:
+        user_data[uid]["alerts"]["ema"] = {}
+    return user_data[uid]
 
-# ─── CACHE (evită rate limiting CoinGecko) ─────────────────────────────────────
-_cache: dict[str, tuple[any, float]] = {}
-CACHE_TTL = 120
+# ─── CACHE ─────────────────────────────────────────────────────────────────────
+_cache = {}
+CACHE_TTL     = 300
+CACHE_TTL_EMA = 600
 
-def cache_get(key: str):
+# State pentru ForceReply
+_user_state = {}
+
+def cache_get(key):
     if key in _cache:
         data, ts = _cache[key]
         if time.time() - ts < CACHE_TTL:
             return data
     return None
 
-def cache_set(key: str, data):
+def cache_set(key, data):
     _cache[key] = (data, time.time())
 
-# ─── PORTFOLIO / WATCHLIST HELPERS ────────────────────────────────────────────
+# ─── COIN SLUG MAP ─────────────────────────────────────────────────────────────
+COIN_SLUG_MAP = {
+    # Core
+    "BTC": "bitcoin",           "ETH": "ethereum",          "SOL": "solana",
+    "BNB": "binancecoin",       "XRP": "ripple",             "ADA": "cardano",
+    "DOGE": "dogecoin",         "DOT": "polkadot",           "AVAX": "avalanche-2",
+    "LINK": "chainlink",        "ALGO": "algorand",          "SUI": "sui",
+    "ARB": "arbitrum",          "FET": "fetch-ai",           "EGLD": "elrond-erd-2",
+    "HYPE": "hyperliquid",      "VIRTUAL": "virtual-protocol",
+    # Top 100 CoinGecko
+    "ZEC": "zcash",             "XMR": "monero",             "TON": "the-open-network",
+    "XLM": "stellar",           "LTC": "litecoin",           "DAI": "dai",
+    "HBAR": "hedera-hashgraph", "SHIB": "shiba-inu",         "CRO": "crypto-com-chain",
+    "TAO": "bittensor",         "UNI": "uniswap",            "MNT": "mantle",
+    "NEAR": "near",             "ONDO": "ondo-finance",      "OKB": "okb",
+    "ICP": "internet-computer", "AAVE": "aave",              "ETC": "ethereum-classic",
+    "QNT": "quant-network",     "ENA": "ethena",             "ATOM": "cosmos",
+    "KAS": "kaspa",             "POL": "polygon-ecosystem-token", "RENDER": "render-token",
+    "WLD": "worldcoin-wld",     "APT": "aptos",              "FIL": "filecoin",
+    "JUP": "jupiter-exchange-solana", "VET": "vechain",      "BONK": "bonk",
+    "PENGU": "pudgy-penguins",  "ASTER": "aster-2",          "PUMP": "pump-fun",
+    "WLFI": "world-liberty-financial",
+}
 
-def fmt_pct(value) -> str:
+def resolve_slug(symbol):
+    return COIN_SLUG_MAP.get(symbol.upper(), symbol.lower())
+
+
+# ─── MONEDE PREDEFINITE ────────────────────────────────────────────────────────
+# Adauga sau sterge monede din aceasta lista dupa preferinta
+PREDEFINED_COINS = [
+    "BTC",  "ETH",  "SOL",   "BNB",   "XRP",
+    "ADA",  "DOGE", "AVAX",  "LINK",  "DOT",
+    "ALGO", "SUI",  "ARB",   "FET",   "HYPE",
+    "EGLD", "VIRTUAL",
+    # Top 100
+    "ZEC",  "XMR",  "TON",   "XLM",   "LTC",
+    "DAI",  "HBAR", "SHIB",  "CRO",   "TAO",
+    "UNI",  "MNT",  "NEAR",  "ONDO",  "OKB",
+    "ICP",  "AAVE", "ETC",   "QNT",   "ENA",
+    "ATOM", "KAS",  "POL",   "RENDER","WLD",
+    "APT",  "FIL",  "JUP",   "VET",   "BONK",
+    "PENGU","ASTER","PUMP",  "WLFI",
+]
+# ─── SECTOARE ──────────────────────────────────────────────────────────────────
+SECTORS = {
+    "ai":      ("artificial-intelligence",    "AI & Big Data"),
+    "defi":    ("decentralized-finance-defi", "DeFi"),
+    "gaming":  ("gaming",                     "Gaming & GameFi"),
+    "layer1":  ("layer-1",                    "Layer 1"),
+    "layer2":  ("layer-2",                    "Layer 2"),
+    "rwa":     ("real-world-assets-rwa",      "Real World Assets"),
+    "privacy": ("privacy-coins",              "Privacy Coins"),
+}
+
+# ─── CURRENCY ──────────────────────────────────────────────────────────────────
+CURRENCY_SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "RON": "RON "}
+
+def get_currency_rate(currency):
+    if currency == "USD":
+        return 1.0
+    cached = cache_get("rate:" + currency)
+    if cached:
+        return cached
+    try:
+        r = requests.get(
+            COINGECKO_BASE + "/simple/price",
+            params={"ids": "tether", "vs_currencies": currency.lower()},
+            timeout=8,
+        )
+        if r.status_code == 200:
+            rate = r.json().get("tether", {}).get(currency.lower(), 1.0)
+            cache_set("rate:" + currency, rate)
+            return rate
+    except Exception:
+        pass
+    return 1.0
+
+def fmt_currency(value, currency="USD"):
+    rate = get_currency_rate(currency)
+    converted = value * rate
+    symbol = CURRENCY_SYMBOLS.get(currency, currency + " ")
+    if converted >= 1:
+        return symbol + "{:,.2f}".format(converted)
+    return symbol + "{:.6f}".format(converted)
+
+def fmt_price(value):
+    if value is None:
+        return "N/A"
+    try:
+        if value >= 1:
+            return "$" + "{:,.2f}".format(value)
+        return "$" + "{:.6f}".format(value)
+    except Exception:
+        return "N/A"
+
+def fmt_pct(value):
     if value is None:
         return "N/A"
     sign  = "+" if value >= 0 else ""
     emoji = "🟢" if value >= 0 else "🔴"
-    return f"{emoji} {sign}{value:.2f}%"
+    return emoji + " " + sign + "{:.2f}%".format(value)
 
-def get_prices_batch(slugs: list[str]) -> dict:
-    if not slugs:
-        return {}
+def fmt_large(value):
+    try:
+        if value >= 1000000000:
+            return "$" + "{:.2f}B".format(value / 1000000000)
+        if value >= 1000000:
+            return "$" + "{:.1f}M".format(value / 1000000)
+        if value >= 1000:
+            return "$" + "{:.1f}K".format(value / 1000)
+        return "$" + "{:,.2f}".format(value)
+    except Exception:
+        return "N/A"
+
+# ─── COINGECKO API ─────────────────────────────────────────────────────────────
+
+def cg_get(endpoint, params=None, timeout=15):
     for attempt in range(3):
         if attempt > 0:
-            time.sleep(5)
+            time.sleep(8)
         try:
             r = requests.get(
-                f"{COINGECKO_BASE}/simple/price",
-                params={
-                    "ids": ",".join(slugs),
-                    "vs_currencies": "usd",
-                    "include_24hr_change": "true",
-                },
+                COINGECKO_BASE + endpoint,
+                params=params,
+                timeout=timeout,
                 headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
-                timeout=12,
             )
+            if r.status_code == 429:
+                time.sleep(int(r.headers.get("Retry-After", 30)))
+                continue
             if r.status_code == 200:
                 return r.json()
-            if r.status_code == 429:
-                time.sleep(int(r.headers.get("Retry-After", 15)))
-            logger.warning(f"get_prices_batch HTTP {r.status_code} (attempt {attempt + 1})")
         except Exception as e:
-            logger.error(f"get_prices_batch error: {e}")
-    return {}
+            logger.error("cg_get error: " + str(e))
+    return None
 
-def calculate_portfolio(portfolio: dict) -> dict | None:
-    if not portfolio:
-        return None
-    slugs = [info.get("slug") or resolve_slug(sym) for sym, info in portfolio.items()]
-    prices_data = get_prices_batch([s for s in slugs if s])
-    coins_data  = []
-    total_value = total_invested = 0.0
-    for (symbol, info), slug in zip(portfolio.items(), slugs):
-        if not slug:
-            continue
-        pd        = prices_data.get(slug, {})
-        cur_price = pd.get("usd", 0)
-        change_24 = pd.get("usd_24h_change", 0)
-        amount    = float(info.get("amount", 0))
-        buy_price = float(info.get("buy_price", 0))
-        cur_val   = amount * cur_price
-        invested  = amount * buy_price
-        pnl       = cur_val - invested
-        pnl_pct   = ((cur_price - buy_price) / buy_price * 100) if buy_price > 0 else 0
-        total_value    += cur_val
-        total_invested += invested
-        coins_data.append({
-            "symbol": symbol, "amount": amount,
-            "buy_price": buy_price, "current_price": cur_price,
-            "current_value": cur_val, "invested": invested,
-            "pnl": pnl, "pnl_pct": pnl_pct, "change_24h": change_24,
+def get_price(slug):
+    cached = cache_get("price:" + slug)
+    if cached:
+        return cached
+    data = cg_get("/simple/price", params={
+        "ids": slug, "vs_currencies": "usd",
+        "include_24hr_change": "true", "include_market_cap": "true",
+    })
+    if data and slug in data:
+        result = {
+            "price":      data[slug].get("usd", 0),
+            "change_24h": data[slug].get("usd_24h_change", 0),
+            "market_cap": data[slug].get("usd_market_cap", 0),
+        }
+        cache_set("price:" + slug, result)
+        return result
+    return None
+
+def get_current_price_simple(slug):
+    pd = get_price(slug)
+    return pd["price"] if pd else None
+
+def get_prices_batch(slugs):
+    if not slugs:
+        return {}
+    uncached = [s for s in slugs if not cache_get("price:" + s)]
+    if uncached:
+        data = cg_get("/simple/price", params={
+            "ids": ",".join(uncached), "vs_currencies": "usd",
+            "include_24hr_change": "true", "include_market_cap": "true",
         })
-    total_pnl     = total_value - total_invested
-    total_pnl_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0
-    return {
-        "coins": coins_data, "total_value": total_value,
-        "total_invested": total_invested, "total_pnl": total_pnl,
-        "total_pnl_pct": total_pnl_pct,
-    }
+        if data:
+            for slug in uncached:
+                if slug in data:
+                    result = {
+                        "price":      data[slug].get("usd", 0),
+                        "change_24h": data[slug].get("usd_24h_change", 0),
+                        "market_cap": data[slug].get("usd_market_cap", 0),
+                    }
+                    cache_set("price:" + slug, result)
+    return {s: cache_get("price:" + s) for s in slugs}
 
-# ─── TOPIC ROUTING ─────────────────────────────────────────────────────────────
-
-def topic_redirect(uid: int) -> str:
-    return t(uid, "topic_redirect")
-
-def is_in_correct_topic(update: Update) -> bool:
-    if update.effective_chat.type == "private":
-        return True
-    if not GROUP_CHAT_ID or not TOPIC_COMENZI:
-        return True
-    thread_id = getattr(update.message, "message_thread_id", None) or 0
-    return thread_id == TOPIC_COMENZI
-
-async def post_to_topic(bot, topic_id: int, text: str, keyboard=None):
-    if not GROUP_CHAT_ID or not topic_id:
-        logger.warning(f"post_to_topic: GROUP_CHAT_ID sau topic_id neconfigurat (topic={topic_id})")
-        return
+def get_fear_greed(fresh=False):
+    if not fresh:
+        cached = cache_get("fear_greed")
+        if cached:
+            return cached
     try:
-        await bot.send_message(
-            chat_id=GROUP_CHAT_ID,
-            message_thread_id=topic_id,
-            text=text,
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
-            disable_web_page_preview=True,
-        )
-    except Exception as e:
-        logger.error(f"post_to_topic error (topic={topic_id}): {e}")
-
-# ─── MONEDE CRYPTOBUBBLES ──────────────────────────────────────────────────────
-BUBBLES_COINS = [
-    ("bitcoin",               "BTC"),
-    ("ethereum",              "ETH"),
-    ("tether",                "USDT"),
-    ("usd-coin",              "USDC"),
-    ("dogecoin",              "DOGE"),
-    ("hyperliquid",           "HYPE"),
-    ("cardano",               "ADA"),
-    ("chainlink",             "LINK"),
-    ("avalanche-2",           "AVAX"),
-    ("sui",                   "SUI"),
-    ("internet-computer",     "ICP"),
-    ("polkadot",              "DOT"),
-    ("astar",                 "ASTR"),
-    ("cosmos",                "ATOM"),
-    ("algorand",              "ALGO"),
-    ("arbitrum",              "ARB"),
-    ("filecoin",              "FIL"),
-    ("vechain",               "VET"),
-    ("virtuals-protocol",     "VIRTUAL"),
-    ("sei-network",           "SEI"),
-    ("injective-protocol",    "INJ"),
-    ("celestia",              "TIA"),
-    ("the-graph",             "GRT"),
-    ("elrond-erd-2",          "EGLD"),
-    ("binancecoin",           "BNB"),
-    ("ripple",                "XRP"),
-    ("fetch-ai",              "FET"),
-    ("gala",                  "GALA"),
-]
-
-# ─── FORMATARE ─────────────────────────────────────────────────────────────────
-
-def fmt_price(value) -> str:
-    if value is None:
-        return "N/A"
-    if value >= 1:
-        return f"${value:,.2f}"
-    return f"${value:.6f}"
-
-def fmt_large(value) -> str:
-    if not value:
-        return "N/A"
-    if value >= 1_000_000_000_000:
-        return f"${value / 1_000_000_000_000:.2f}T"
-    if value >= 1_000_000_000:
-        return f"${value / 1_000_000_000:.2f}B"
-    if value >= 1_000_000:
-        return f"${value / 1_000_000:.1f}M"
-    return f"${value:,.0f}"
-
-def fmt_change(pct) -> str:
-    if pct is None:
-        return "N/A"
-    arrow = "🟢 ▲" if pct >= 0 else "🔴 ▼"
-    return f"{arrow} {abs(pct):.2f}%"
-
-# ─── MAP SLUG COINGECKO ────────────────────────────────────────────────────────
-
-COIN_SLUG_MAP = {
-    "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana",
-    "BNB": "binancecoin", "XRP": "ripple", "ADA": "cardano",
-    "DOGE": "dogecoin", "DOT": "polkadot", "AVAX": "avalanche-2",
-    "LINK": "chainlink", "LTC": "litecoin", "UNI": "uniswap",
-    "XLM": "stellar", "TRX": "tron", "SHIB": "shiba-inu",
-    "MATIC": "matic-network", "NEAR": "near", "ATOM": "cosmos",
-    "FTM": "fantom", "ALGO": "algorand", "XMR": "monero",
-    "PEPE": "pepe", "SUI": "sui", "APT": "aptos",
-    "ARB": "arbitrum", "OP": "optimism", "INJ": "injective-protocol",
-    "FET": "fetch-ai", "RENDER": "render-token", "WIF": "dogwifcoin",
-    "ICP": "internet-computer", "HBAR": "hedera-hashgraph",
-    "FIL": "filecoin", "VET": "vechain", "SEI": "sei-network",
-    "TIA": "celestia", "GRT": "the-graph", "EGLD": "elrond-erd-2",
-    "VIRTUAL": "virtuals-protocol", "HYPE": "hyperliquid",
-    "ASTR": "astar", "KAS": "kaspa", "IMX": "immutable-x",
-    "MNT": "mantle", "STX": "stacks", "FLOW": "flow",
-    "GALA": "gala", "OKB": "okb",
-    "bitcoin": "bitcoin", "ethereum": "ethereum", "solana": "solana",
-    "ripple": "ripple", "cardano": "cardano", "dogecoin": "dogecoin",
-    "polkadot": "polkadot", "avalanche": "avalanche-2",
-    "chainlink": "chainlink", "litecoin": "litecoin",
-    "stellar": "stellar", "tron": "tron", "shiba": "shiba-inu",
-    "polygon": "matic-network", "near": "near", "cosmos": "cosmos",
-    "fantom": "fantom", "algorand": "algorand", "monero": "monero",
-    "bnb": "binancecoin", "binancecoin": "binancecoin",
-    "arbitrum": "arbitrum", "optimism": "optimism",
-    "injective": "injective-protocol", "filecoin": "filecoin",
-    "vechain": "vechain", "celestia": "celestia",
-    "hyperliquid": "hyperliquid", "kaspa": "kaspa",
-}
-
-def resolve_slug(query: str) -> str | None:
-    q    = query.strip()
-    slug = COIN_SLUG_MAP.get(q.upper()) or COIN_SLUG_MAP.get(q.lower())
-    if slug:
-        return slug
-    cache_key = f"search:{q.lower()}"
-    cached = cache_get(cache_key)
-    if cached is not None:
-        return cached
-    try:
-        r = requests.get(f"{COINGECKO_BASE}/search", params={"query": q}, timeout=10)
+        r = requests.get("https://api.alternative.me/fng/?limit=2", timeout=10)
         if r.status_code == 200:
-            coins = r.json().get("coins", [])
-            if coins:
-                found = coins[0]["id"]
-                cache_set(cache_key, found)
-                return found
-    except Exception as e:
-        logger.error(f"resolve_slug search error: {e}")
-    return None
-
-# ─── DATE COINGECKO ────────────────────────────────────────────────────────────
-
-def get_coin_data(slug: str) -> dict | None:
-    for attempt in range(3):
-        if attempt > 0:
-            time.sleep(2)
-        try:
-            r = requests.get(
-                f"{COINGECKO_BASE}/coins/markets",
-                params={
-                    "vs_currency": "usd",
-                    "ids": slug,
-                    "sparkline": "false",
-                    "price_change_percentage": "1h,24h,7d,30d,1y",
-                },
-                timeout=10,
-            )
-            if r.status_code == 200:
-                data = r.json()
-                if not data:
-                    return None
-                c = data[0]
-                return {
-                    "slug":       c["id"],
-                    "symbol":     c["symbol"].upper(),
-                    "name":       c["name"],
-                    "rank":       c.get("market_cap_rank") or "N/A",
-                    "price":      c.get("current_price") or 0,
-                    "change_1h":  c.get("price_change_percentage_1h_in_currency") or 0,
-                    "change_24h": c.get("price_change_percentage_24h_in_currency")
-                                  or c.get("price_change_percentage_24h") or 0,
-                    "change_7d":  c.get("price_change_percentage_7d_in_currency") or 0,
-                    "change_30d": c.get("price_change_percentage_30d_in_currency") or 0,
-                    "change_1y":  c.get("price_change_percentage_1y_in_currency") or 0,
-                    "high_24h":   c.get("high_24h") or 0,
-                    "low_24h":    c.get("low_24h") or 0,
-                    "market_cap": c.get("market_cap") or 0,
-                    "volume_24h": c.get("total_volume") or 0,
+            data = r.json().get("data", [])
+            if data:
+                result = {
+                    "value":     int(data[0]["value"]),
+                    "label":     data[0]["value_classification"],
+                    "yesterday": int(data[1]["value"]) if len(data) > 1 else int(data[0]["value"]),
                 }
-            logger.warning(f"get_coin_data HTTP {r.status_code} pentru {slug} (attempt {attempt + 1})")
-        except Exception as e:
-            logger.error(f"get_coin_data error ({slug}): {e}")
+                cache_set("fear_greed", result)
+                return result
+    except Exception as e:
+        logger.error("get_fear_greed error: " + str(e))
     return None
 
-def get_top_coins(limit: int = 10) -> list[dict]:
-    cache_key = f"top:{limit}"
-    cached = cache_get(cache_key)
-    if cached is not None:
+def get_fear_greed_stats():
+    cached = cache_get("fear_greed_stats")
+    if cached:
         return cached
-    for attempt in range(3):
-        if attempt > 0:
-            time.sleep(2)
-        try:
-            r = requests.get(
-                f"{COINGECKO_BASE}/coins/markets",
-                params={"vs_currency": "usd", "order": "market_cap_desc",
-                        "per_page": limit, "page": 1, "sparkline": "false"},
-                timeout=10,
-            )
-            if r.status_code == 200:
-                result = [{"symbol": c["symbol"].upper(), "name": c["name"],
-                         "slug": c["id"], "price": c["current_price"],
-                         "change_24h": c.get("price_change_percentage_24h") or 0}
-                        for c in r.json()]
-                cache_set(cache_key, result)
-                return result
-            logger.warning(f"get_top_coins HTTP {r.status_code} (attempt {attempt + 1})")
-        except Exception as e:
-            logger.error(f"get_top_coins error: {e}")
-    return []
-
-def get_trending_coins() -> list[dict]:
     try:
-        r = requests.get(f"{COINGECKO_BASE}/search/trending", timeout=10)
+        r = requests.get("https://api.alternative.me/fng/?limit=8", timeout=10)
+        if r.status_code == 200:
+            data = r.json().get("data", [])
+            if data:
+                week_vals = [int(d["value"]) for d in data]
+                result = {
+                    "value":     int(data[0]["value"]),
+                    "label":     data[0]["value_classification"],
+                    "yesterday": int(data[1]["value"]) if len(data) > 1 else int(data[0]["value"]),
+                    "week_avg":  round(sum(week_vals) / len(week_vals), 1),
+                }
+                cache_set("fear_greed_stats", result)
+                return result
+    except Exception as e:
+        logger.error("get_fear_greed_stats error: " + str(e))
+    return None
+
+def get_ema(slug, period=200, timeframe="daily"):
+    cache_key = "ema:" + slug + ":" + str(period) + ":" + timeframe
+    if cache_key in _cache:
+        data, ts = _cache[cache_key]
+        if time.time() - ts < CACHE_TTL_EMA:
+            return data
+    try:
+        data = cg_get("/coins/" + slug + "/market_chart",
+                      params={"vs_currency": "usd", "days": "365", "interval": "daily"})
+        if not data or "prices" not in data:
+            return None
+        prices = [p[1] for p in data["prices"]]
+        if not prices:
+            return None
+        effective_period = min(period, len(prices))
+        k   = 2 / (effective_period + 1)
+        ema = prices[0]
+        for price in prices[1:]:
+            ema = price * k + ema * (1 - k)
+        ema = round(ema, 2)
+        cache_set(cache_key, ema)
+        return ema
+    except Exception as e:
+        logger.error("get_ema error: " + str(e))
+    return None
+
+def get_trending_coins():
+    cached = cache_get("trending")
+    if cached is not None:
+        for coin in cached:
+            if "change_24h" not in coin["item"]:
+                coin["item"]["change_24h"] = 0
+        return cached
+    try:
+        r = requests.get(
+            COINGECKO_BASE + "/search/trending",
+            timeout=10,
+            headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
+        )
         if r.status_code != 200:
             return []
         coins = r.json().get("coins", [])
@@ -609,957 +459,1534 @@ def get_trending_coins() -> list[dict]:
                 item["change_24h"] = round(chg, 2)
             except Exception:
                 item["change_24h"] = 0
+        cache_set("trending", coins)
         return coins
     except Exception as e:
-        logger.error(f"get_trending_coins error: {e}")
+        logger.error("get_trending_coins error: " + str(e))
     return []
 
-def get_bubbles_data() -> list[dict]:
-    """Fetch toate perioadele deodată, cachează sub o singură cheie."""
-    cached = cache_get("bubbles_all")
-    if cached is not None:
-        return cached
-    slugs = [slug for slug, _ in BUBBLES_COINS]
-    try:
-        r = requests.get(
-            f"{COINGECKO_BASE}/coins/markets",
-            params={
-                "vs_currency": "usd",
-                "ids": ",".join(slugs),
-                "order": "market_cap_desc",
-                "per_page": 100,
-                "page": 1,
-                "sparkline": "false",
-                "price_change_percentage": "1h,24h,7d,30d,1y",
-            },
-            timeout=15,
-        )
-        if r.status_code == 200:
-            result = []
-            for c in r.json():
-                result.append({
-                    "slug":       c["id"],
-                    "symbol":     c["symbol"].upper(),
-                    "name":       c["name"],
-                    "rank":       c.get("market_cap_rank", 999),
-                    "price":      c.get("current_price", 0),
-                    "change_1h":  c.get("price_change_percentage_1h_in_currency") or 0,
-                    "change_24h": c.get("price_change_percentage_24h_in_currency")
-                                  or c.get("price_change_percentage_24h") or 0,
-                    "change_7d":  c.get("price_change_percentage_7d_in_currency") or 0,
-                    "change_30d": c.get("price_change_percentage_30d_in_currency") or 0,
-                    "change_1y":  c.get("price_change_percentage_1y_in_currency") or 0,
-                    "market_cap": c.get("market_cap", 0),
-                    "volume_24h": c.get("total_volume", 0),
-                })
-            cache_set("bubbles_all", result)
-            return result
-        logger.error(f"get_bubbles_data HTTP {r.status_code}: {r.text[:200]}")
-    except Exception as e:
-        logger.error(f"get_bubbles_data error: {e}")
-    return []
-
-def get_crypto_news(limit: int = 5) -> list[dict]:
-    if not CRYPTOPANIC_TOKEN:
-        return []
-    try:
-        r = requests.get(
-            "https://cryptopanic.com/api/v1/posts/",
-            params={"auth_token": CRYPTOPANIC_TOKEN, "public": "true", "kind": "news"},
-            timeout=10,
-        )
-        posts = r.json().get("results", [])
-        return [{"title": p["title"], "url": p["url"]} for p in posts[:limit]]
-    except Exception as e:
-        logger.error(f"get_crypto_news error: {e}")
-    return []
-
-
-# ─── FORMAT BUBBLES ────────────────────────────────────────────────────────────
-
-def format_bubbles(coins: list[dict], period: str, uid: int = 0) -> list[str]:
-    period_key = {
-        "1h": "change_1h", "24h": "change_24h",
-        "7d": "change_7d", "30d": "change_30d", "1y": "change_1y",
-    }.get(period, "change_24h")
-
-    sorted_coins = sorted(coins, key=lambda c: c.get(period_key, 0), reverse=True)
-    label        = t(uid, "period_labels").get(period, period)
-    header       = t(uid, "bubbles_header", label=label, n=len(coins))
-    cont         = t(uid, "bubbles_cont",   label=label)
-
-    lines = []
-    for c in sorted_coins:
-        chg      = c.get(period_key, 0)
-        chg_str  = f"+{chg:.1f}%" if chg >= 0 else f"{chg:.1f}%"
-        rank     = c["rank"]
-        rank_str = f"0{rank}" if isinstance(rank, int) and rank < 10 else str(rank)
-        lines.append(f"{c['symbol']} #{rank_str}  {fmt_price(c['price'])}  {'🟢' if chg>=0 else '🔴'} {chg_str}\n")
-
-    pages   = []
-    current = header
-    for line in lines:
-        if len(current) + len(line) > 3800:
-            pages.append(current)
-            current = cont
-        current += line
-    if current.strip():
-        pages.append(current)
-
-    return pages
-
-# ─── STATS DATA SOURCES ────────────────────────────────────────────────────────
-
-def get_fear_greed() -> dict | None:
-    cached = cache_get("fear_greed")
-    if cached is not None:
-        return cached
-    try:
-        r = requests.get("https://api.alternative.me/fng/?limit=8", timeout=10)
-        if r.status_code == 200:
-            data = r.json().get("data", [])
-            if not data:
-                return None
-            today     = data[0]
-            yesterday = data[1] if len(data) > 1 else data[0]
-            week_vals = [int(d["value"]) for d in data]
-            result = {
-                "value":     int(today["value"]),
-                "label":     today["value_classification"],
-                "yesterday": int(yesterday["value"]),
-                "week_avg":  round(sum(week_vals) / len(week_vals), 1),
-                "history":   week_vals,
-            }
-            cache_set("fear_greed", result)
-            return result
-    except Exception as e:
-        logger.error(f"get_fear_greed error: {e}")
-    return None
-
-def get_global_market() -> dict | None:
+def get_global_market():
     cached = cache_get("global_market")
-    if cached is not None:
+    if cached:
         return cached
-    try:
-        r = requests.get(f"{COINGECKO_BASE}/global", timeout=10)
-        if r.status_code != 200:
-            return None
-        d = r.json().get("data", {})
-        result = {
-            "total_market_cap":      d.get("total_market_cap", {}).get("usd", 0),
-            "total_volume_24h":      d.get("total_volume", {}).get("usd", 0),
-            "btc_dominance":         round(d.get("market_cap_percentage", {}).get("btc", 0), 2),
-            "eth_dominance":         round(d.get("market_cap_percentage", {}).get("eth", 0), 2),
-            "market_cap_change_24h": d.get("market_cap_change_percentage_24h_usd", 0),
-        }
-        cache_set("global_market", result)
-        return result
-    except Exception as e:
-        logger.error(f"get_global_market error: {e}")
-    return None
+    data = cg_get("/global")
+    if not data:
+        return None
+    d = data.get("data", {})
+    result = {
+        "total_market_cap":      d.get("total_market_cap", {}).get("usd", 0),
+        "total_volume_24h":      d.get("total_volume", {}).get("usd", 0),
+        "btc_dominance":         round(d.get("market_cap_percentage", {}).get("btc", 0), 2),
+        "eth_dominance":         round(d.get("market_cap_percentage", {}).get("eth", 0), 2),
+        "market_cap_change_24h": d.get("market_cap_change_percentage_24h_usd", 0),
+    }
+    cache_set("global_market", result)
+    return result
 
-def get_btc_eth_prices() -> dict:
+def get_btc_eth_prices():
     cached = cache_get("btc_eth_prices")
-    if cached is not None:
+    if cached:
         return cached
+    data = cg_get("/coins/markets", params={
+        "vs_currency": "usd", "ids": "bitcoin,ethereum",
+        "order": "market_cap_desc", "per_page": 2, "page": 1, "sparkline": "false",
+    })
+    if not data:
+        return {}
+    result = {}
+    for c in data:
+        if c["id"] == "bitcoin":
+            result["btc_price"]  = c.get("current_price", 0)
+            result["btc_change"] = c.get("price_change_percentage_24h") or 0
+        elif c["id"] == "ethereum":
+            result["eth_price"]  = c.get("current_price", 0)
+            result["eth_change"] = c.get("price_change_percentage_24h") or 0
+    cache_set("btc_eth_prices", result)
+    return result
+
+def get_sector_coins(category_id, limit=15):
+    cached = cache_get("sector:" + category_id)
+    if cached:
+        return cached
+    # Sector coins au cache TTL mai mare (10 min) ca sa nu faca request la fiecare click
     try:
         r = requests.get(
-            f"{COINGECKO_BASE}/coins/markets",
-            params={"vs_currency": "usd", "ids": "bitcoin,ethereum",
-                    "order": "market_cap_desc", "per_page": 2,
-                    "page": 1, "sparkline": "false"},
+            COINGECKO_BASE + "/coins/markets",
+            params={
+                "vs_currency": "usd", "category": category_id,
+                "order": "market_cap_desc", "per_page": limit,
+                "page": 1, "sparkline": "false",
+            },
             timeout=10,
+            headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
         )
         if r.status_code == 200:
-            result = {}
-            for c in r.json():
-                if c["id"] == "bitcoin":
-                    result["btc_price"]  = c.get("current_price", 0)
-                    result["btc_change"] = c.get("price_change_percentage_24h") or 0
-                elif c["id"] == "ethereum":
-                    result["eth_price"]  = c.get("current_price", 0)
-                    result["eth_change"] = c.get("price_change_percentage_24h") or 0
-            cache_set("btc_eth_prices", result)
+            result = [{
+                "symbol":     c["symbol"].upper(),
+                "name":       c["name"],
+                "price":      c.get("current_price", 0),
+                "change_24h": c.get("price_change_percentage_24h") or 0,
+                "rank":       c.get("market_cap_rank", "?"),
+            } for c in r.json()]
+            # Cache 10 minute pentru sectoare
+            _cache["sector:" + category_id] = (result, time.time() - CACHE_TTL + 600)
             return result
+        elif r.status_code == 429:
+            time.sleep(int(r.headers.get("Retry-After", 15)))
     except Exception as e:
-        logger.error(f"get_btc_eth_prices error: {e}")
-    return {}
+        logger.error("get_sector_coins error: " + str(e))
+    return []
 
-# ─── STATS ENGINE ──────────────────────────────────────────────────────────────
+# ─── STATS FORMAT ──────────────────────────────────────────────────────────────
 
-def fng_emoji(value: int) -> str:
-    if value <= 25:  return "😱"
-    if value <= 45:  return "😰"
-    if value <= 55:  return "😐"
-    if value <= 75:  return "😄"
-    return "🤑"
-
-def fng_bar(value: int) -> str:
+def fng_bar(value):
     filled = value // 10
     return "█" * filled + "░" * (10 - filled)
 
-def interpret_fng(value: int, uid: int = 0) -> str:
-    if value <= 20:  return t(uid, "fng_extreme_fear")
-    if value <= 40:  return t(uid, "fng_fear")
-    if value <= 60:  return t(uid, "fng_neutral")
-    if value <= 80:  return t(uid, "fng_greed")
-    return t(uid, "fng_extreme_greed")
-
-def calc_market_score(fg: dict, global_data: dict, prices: dict) -> tuple[int, str]:
+def format_stats_full(fg, global_data, prices, lang="ro"):
+    utc_now = datetime.datetime.now(datetime.timezone.utc)
+    year    = utc_now.year
+    march_last = max(datetime.datetime(year, 3, day, 1, tzinfo=datetime.timezone.utc)
+                     for day in range(25, 32) if datetime.datetime(year, 3, day).weekday() == 6)
+    oct_last   = max(datetime.datetime(year, 10, day, 1, tzinfo=datetime.timezone.utc)
+                     for day in range(25, 32) if datetime.datetime(year, 10, day).weekday() == 6)
+    ro_offset  = datetime.timedelta(hours=3) if march_last <= utc_now < oct_last else datetime.timedelta(hours=2)
+    ro_label   = "EEST" if march_last <= utc_now < oct_last else "EET"
+    now        = (utc_now + ro_offset).strftime("%H:%M " + ro_label + " (%d.%m.%Y)")
+    fng_val   = fg["value"]
+    fng_trend = fng_val - fg["yesterday"]
+    if fng_trend > 0:
+        trend_str = ("sus +" if lang == "ro" else "up +") + str(fng_trend)
+    elif fng_trend < 0:
+        trend_str = ("jos " if lang == "ro" else "down ") + str(fng_trend)
+    else:
+        trend_str = "stabil" if lang == "ro" else "stable"
+    bar = fng_bar(fng_val)
+    if fng_val <= 25:   fe = "😱"
+    elif fng_val <= 45: fe = "😰"
+    elif fng_val <= 55: fe = "😐"
+    elif fng_val <= 75: fe = "😄"
+    else:               fe = "🤑"
+    if lang == "ro":
+        if fng_val <= 20:   interp = "Panica extrema - zona istorica de acumulare"
+        elif fng_val <= 40: interp = "Frica in piata - posibila oportunitate"
+        elif fng_val <= 60: interp = "Piata neutra - asteapta confirmare"
+        elif fng_val <= 80: interp = "Lacomie - fii precaut"
+        else:               interp = "Euforie extrema - risc de corectie"
+    else:
+        if fng_val <= 20:   interp = "Extreme panic - historic accumulation zone"
+        elif fng_val <= 40: interp = "Fear in market - possible opportunity"
+        elif fng_val <= 60: interp = "Neutral market - wait for confirmation"
+        elif fng_val <= 80: interp = "Greed - be cautious"
+        else:               interp = "Extreme euphoria - correction risk"
     score = 5.0
-
-    fng_val = fg.get("value", 50)
+    cap_chg = global_data.get("market_cap_change_24h", 0)
+    btc_chg = prices.get("btc_change", 0)
     if fng_val <= 20:   score += 1.5
     elif fng_val <= 40: score += 0.5
-    elif fng_val <= 60: score += 0.0
-    elif fng_val <= 80: score -= 0.5
-    else:               score -= 1.5
-
-    trend = fng_val - fg.get("yesterday", fng_val)
-    if trend > 5:    score += 0.5
-    elif trend < -5: score -= 0.5
-
-    btc_dom = global_data.get("btc_dominance", 50)
-    if btc_dom > 55:   score -= 0.5
-    elif btc_dom < 42: score += 0.5
-
-    cap_chg = global_data.get("market_cap_change_24h", 0)
+    elif fng_val >= 80: score -= 1.5
+    elif fng_val >= 60: score -= 0.5
     if cap_chg > 3:    score += 1.0
     elif cap_chg > 1:  score += 0.5
     elif cap_chg < -3: score -= 1.0
     elif cap_chg < -1: score -= 0.5
-
-    btc_chg = prices.get("btc_change", 0)
     if btc_chg > 3:    score += 0.5
     elif btc_chg < -3: score -= 0.5
-
     score = max(1, min(10, round(score)))
-
-    if score <= 3:   label = "Bearish 🔴"
-    elif score <= 4: label = "Slab Bearish 🟠"
-    elif score <= 6: label = "Neutru 🟡"
-    elif score <= 8: label = "Bullish 🟢"
-    else:            label = "Strong Bullish 🟢🟢"
-
-    return score, label
-
-def generate_insight(fg: dict, global_data: dict, prices: dict) -> str:
-    fng_val  = fg.get("value", 50)
-    btc_chg  = prices.get("btc_change", 0)
-    cap_chg  = global_data.get("market_cap_change_24h", 0)
-    btc_dom  = global_data.get("btc_dominance", 50)
-    week_avg = fg.get("week_avg", 50)
-
-    insights = []
-    if fng_val <= 35 and btc_chg >= 0:
-        insights.append("📊 Deși piața e în frică, BTC rezistă → posibilă acumulare instituțională")
-    elif fng_val >= 70 and btc_chg < -1:
-        insights.append("⚠️ Greed ridicat dar BTC scade → semnal de slăbiciune, fii atent")
-
-    if fng_val > week_avg + 10:
-        insights.append("📈 Sentimentul s-a îmbunătățit față de săptămâna trecută → momentum pozitiv")
-    elif fng_val < week_avg - 10:
-        insights.append("📉 Sentimentul s-a deteriorat față de media săptămânii → prudență")
-
-    if cap_chg > 2:
-        insights.append("💹 Market cap-ul total crește cu volum → trend bullish confirmat")
-    elif cap_chg < -2:
-        insights.append("📉 Scădere generalizată în piață → risc crescut pe termen scurt")
-
-    if btc_dom > 58:
-        insights.append("🔶 BTC dominance ridicat → altcoin-urile suferă, capital concentrat în BTC")
-    elif btc_dom < 42:
-        insights.append("🟣 BTC dominance scăzut → posibilă altseason în desfășurare")
-
-    if fng_val <= 15:
-        insights.append("🚨 Panică extremă istorică → zonele acestea au coincis cu fundul pieței în trecut")
-
-    if not insights:
-        insights.append("➡️ Piața este echilibrată momentan — niciun semnal extrem detectat")
-
-    return "\n".join(f"  {i}" for i in insights[:3])
-
-def format_stats(fg: dict, global_data: dict, prices: dict, uid: int = 0) -> str:
-    from datetime import datetime, timezone, timedelta
-    utc_now = datetime.now(timezone.utc)
-    year    = utc_now.year
-    march_last_sunday = max(
-        datetime(year, 3, day, 1, tzinfo=timezone.utc)
-        for day in range(25, 32)
-        if datetime(year, 3, day).weekday() == 6
-    )
-    oct_last_sunday = max(
-        datetime(year, 10, day, 1, tzinfo=timezone.utc)
-        for day in range(25, 32)
-        if datetime(year, 10, day).weekday() == 6
-    )
-    if march_last_sunday <= utc_now < oct_last_sunday:
-        ro_offset = timedelta(hours=3)
-        ro_label  = "EEST"
+    score_bar = "X" * score + "." * (10 - score)
+    if lang == "ro":
+        if score <= 3:   slabel = "Bearish"
+        elif score <= 4: slabel = "Slab Bearish"
+        elif score <= 6: slabel = "Neutru"
+        elif score <= 8: slabel = "Bullish"
+        else:            slabel = "Strong Bullish"
     else:
-        ro_offset = timedelta(hours=2)
-        ro_label  = "EET"
-    now = (utc_now + ro_offset).strftime(f"%H:%M {ro_label} (%d.%m.%Y)")
+        if score <= 3:   slabel = "Bearish"
+        elif score <= 4: slabel = "Weak Bearish"
+        elif score <= 6: slabel = "Neutral"
+        elif score <= 8: slabel = "Bullish"
+        else:            slabel = "Strong Bullish"
+    cap_a = "🟢" if cap_chg >= 0 else "🔴"
+    btc_a = "🟢" if btc_chg >= 0 else "🔴"
+    eth_a = "🟢" if prices.get("eth_change", 0) >= 0 else "🔴"
+    if lang == "ro":
+        return (
+            "Market Stats - " + now + "\n\n"
+            "SENTIMENT PIATA\n"
+            + fe + " Fear & Greed: " + str(fng_val) + "/100 - " + fg["label"] + "\n"
+            "[" + bar + "]\n"
+            "Fata de ieri: " + trend_str + "\n"
+            "Media 7 zile: " + str(fg.get("week_avg", "N/A")) + "/100\n"
+            + interp + "\n\n"
+            "OVERVIEW PIATA\n"
+            "BTC:  " + fmt_price(prices.get("btc_price", 0)) + "  " + btc_a + " " + "{:.1f}%".format(abs(btc_chg)) + "\n"
+            "ETH:  " + fmt_price(prices.get("eth_price", 0)) + "  " + eth_a + " " + "{:.1f}%".format(abs(prices.get("eth_change", 0))) + "\n"
+            "Mkt Cap: " + fmt_large(global_data.get("total_market_cap", 0)) + "  " + cap_a + " " + "{:.1f}%".format(abs(cap_chg)) + "\n"
+            "Volum 24h: " + fmt_large(global_data.get("total_volume_24h", 0)) + "\n"
+            "BTC Dominance: " + str(global_data.get("btc_dominance", 0)) + "%\n"
+            "ETH Dominance: " + str(global_data.get("eth_dominance", 0)) + "%\n\n"
+            "MARKET SCORE: " + str(score) + "/10 - " + slabel + "\n"
+            "Bazat pe: sentiment + trend + volum + dominance"
+        )
+    else:
+        return (
+            "Market Stats - " + now + "\n\n"
+            "MARKET SENTIMENT\n"
+            + fe + " Fear & Greed: " + str(fng_val) + "/100 - " + fg["label"] + "\n"
+            "[" + bar + "]\n"
+            "vs yesterday: " + trend_str + "\n"
+            "7-day avg: " + str(fg.get("week_avg", "N/A")) + "/100\n"
+            + interp + "\n\n"
+            "MARKET OVERVIEW\n"
+            "BTC:  " + fmt_price(prices.get("btc_price", 0)) + "  " + btc_a + " " + "{:.1f}%".format(abs(btc_chg)) + "\n"
+            "ETH:  " + fmt_price(prices.get("eth_price", 0)) + "  " + eth_a + " " + "{:.1f}%".format(abs(prices.get("eth_change", 0))) + "\n"
+            "Mkt Cap: " + fmt_large(global_data.get("total_market_cap", 0)) + "  " + cap_a + " " + "{:.1f}%".format(abs(cap_chg)) + "\n"
+            "Volume 24h: " + fmt_large(global_data.get("total_volume_24h", 0)) + "\n"
+            "BTC Dominance: " + str(global_data.get("btc_dominance", 0)) + "%\n"
+            "ETH Dominance: " + str(global_data.get("eth_dominance", 0)) + "%\n\n"
+            "MARKET SCORE: " + str(score) + "/10 - " + slabel + "\n"
+            "Based on: sentiment + trend + volume + dominance"
+        )
 
-    fng_val   = fg["value"]
-    fng_trend = fng_val - fg["yesterday"]
-    trend_arrow = (f"↑ +{fng_trend}" if fng_trend > 0 else
-                   f"↓ {fng_trend}"  if fng_trend < 0 else "→ 0")
-    bar = fng_bar(fng_val)
+# ─── PORTFOLIO HELPERS ─────────────────────────────────────────────────────────
 
-    score, score_label = calc_market_score(fg, global_data, prices)
-    score_bar = "⭐" * score + "☆" * (10 - score)
-    insight   = generate_insight(fg, global_data, prices)
+def calculate_portfolio(uid):
+    user      = get_user(uid)
+    portfolio = user.get("portfolio", {})
+    if not portfolio:
+        return None
 
-    cap_chg   = global_data.get("market_cap_change_24h", 0)
-    cap_arrow = "🟢 ▲" if cap_chg >= 0 else "🔴 ▼"
-    btc_arrow = "🟢 ▲" if prices.get("btc_change", 0) >= 0 else "🔴 ▼"
-    eth_arrow = "🟢 ▲" if prices.get("eth_change", 0) >= 0 else "🔴 ▼"
+    # Batch request pentru toate monedele dintr-o data
+    slugs = [info.get("slug", resolve_slug(symbol)) for symbol, info in portfolio.items()]
+    prices_data = {}
+    try:
+        r = requests.get(
+            COINGECKO_BASE + "/simple/price",
+            params={
+                "ids": ",".join(slugs),
+                "vs_currencies": "usd",
+                "include_24hr_change": "true",
+            },
+            timeout=10,
+            headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
+        )
+        if r.status_code == 200:
+            prices_data = r.json()
+    except Exception as e:
+        logger.error("portfolio batch error: " + str(e))
 
-    lines = [
-        f"📊 *Market Stats* — {now}",
-        "━" * 20,
-        "",
-        t(uid, "stats_sentiment"),
-        fng_emoji(fng_val) + f" Fear & Greed: *{fng_val}/100* — _{fg['label']}_",
-        f"`[{bar}]`",
-        f"• {t(uid, 'stats_vs_yesterday')}: `{trend_arrow}`",
-        f"• {t(uid, 'stats_week_avg')}: `{fg['week_avg']}/100`",
-        "• " + interpret_fng(fng_val, uid),
-        "",
-        t(uid, "stats_overview"),
-        f"• BTC:  `{fmt_price(prices.get('btc_price', 0))}`  {btc_arrow} `{abs(prices.get('btc_change', 0)):.1f}%`",
-        f"• ETH:  `{fmt_price(prices.get('eth_price', 0))}`  {eth_arrow} `{abs(prices.get('eth_change', 0)):.1f}%`",
-        f"• {t(uid, 'stats_mktcap')}: `{fmt_large(global_data.get('total_market_cap', 0))}`  {cap_arrow} `{abs(cap_chg):.1f}%`",
-        f"• {t(uid, 'stats_volume')}:     `{fmt_large(global_data.get('total_volume_24h', 0))}`",
-        f"• BTC Dominance: `{global_data.get('btc_dominance', 0)}%`",
-        f"• ETH Dominance: `{global_data.get('eth_dominance', 0)}%`",
-        "",
-        t(uid, "stats_insight"),
-        insight,
-        "",
-        f"⚡ *MARKET SCORE: {score}/10 — {score_label}*",
-        f"`{score_bar}`",
-        f"_{t(uid, 'stats_score_label')}_",
-    ]
+    total_value = total_invested = 0
+    coins_data  = []
+    for symbol, info in portfolio.items():
+        slug      = info.get("slug", resolve_slug(symbol))
+        amount    = float(info.get("amount", 0))
+        buy_price = float(info.get("buy_price", 0))
+        pd        = prices_data.get(slug, {})
+        if not pd:
+            continue
+        cur_price = pd.get("usd", 0)
+        change_24h = pd.get("usd_24h_change", 0)
+        cur_val   = amount * cur_price
+        invested  = amount * buy_price
+        pnl       = cur_val - invested
+        pnl_pct   = ((cur_price - buy_price) / buy_price * 100) if buy_price > 0 else 0
+        total_value    += cur_val
+        total_invested += invested
+        coins_data.append({
+            "symbol": symbol, "amount": amount, "buy_price": buy_price,
+            "current_price": cur_price, "current_value": cur_val,
+            "invested": invested, "pnl": pnl, "pnl_pct": pnl_pct,
+            "change_24h": change_24h,
+        })
+    total_pnl     = total_value - total_invested
+    total_pnl_pct = ((total_pnl / total_invested) * 100) if total_invested > 0 else 0
+    return {
+        "coins": coins_data, "total_value": total_value,
+        "total_invested": total_invested, "total_pnl": total_pnl,
+        "total_pnl_pct": total_pnl_pct, "currency": user.get("currency", "USD"),
+    }
+
+
+# ─── DAILY REPORT ──────────────────────────────────────────────────────────────
+
+async def generate_report(uid):
+    user     = get_user(uid)
+    lang     = user.get("lang", "ro")
+    currency = user.get("currency", "USD")
+    now      = datetime.datetime.now(pytz.timezone("Europe/Bucharest"))
+    lines    = ["=== " + t(uid, "report_title") + " ===", now.strftime("%d.%m.%Y %H:%M"), ""]
+
+    fg = get_fear_greed()
+    if fg:
+        fe = "😱" if fg["value"] <= 25 else ("😰" if fg["value"] <= 45 else ("😐" if fg["value"] <= 55 else ("😄" if fg["value"] <= 75 else "🤑")))
+        trend = " (sus)" if fg["value"] > fg["yesterday"] else (" (jos)" if fg["value"] < fg["yesterday"] else "")
+        lines += ["SENTIMENT PIATA" if lang == "ro" else "MARKET SENTIMENT",
+                  fe + " Fear & Greed: " + str(fg["value"]) + "/100 - " + fg["label"] + trend, ""]
+
+    pf = calculate_portfolio(uid)
+    if pf and pf["coins"]:
+        lines += ["PORTOFOLIU" if lang == "ro" else "PORTFOLIO",
+                  ("Valoare totala: " if lang == "ro" else "Total value: ") + fmt_currency(pf["total_value"], currency),
+                  "P&L: " + fmt_currency(pf["total_pnl"], currency) + " (" + fmt_pct(pf["total_pnl_pct"]) + ")", ""]
+        for c in pf["coins"]:
+            lines.append(c["symbol"] + ": " + fmt_currency(c["current_value"], currency) + " | 24h: " + fmt_pct(c["change_24h"]))
+        lines.append("")
+
+    watchlist = user.get("watchlist", [])
+    if watchlist:
+        slugs = [resolve_slug(s) for s in watchlist]
+        prices = get_prices_batch(slugs)
+        lines.append("WATCHLIST")
+        for symbol, slug in zip(watchlist, slugs):
+            pd = prices.get(slug)
+            if pd:
+                lines.append(symbol + ": " + fmt_price(pd["price"]) + " | " + fmt_pct(pd.get("change_24h", 0)) + " (24h)")
+        lines.append("")
+
+    lines += ["---", "/portfolio | /watchlist"]
     return "\n".join(lines)
+
+# ─── HELP MENU ─────────────────────────────────────────────────────────────────
+
+def help_main_keyboard(lang="ro"):
+    if lang == "ro":
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("📁 Portofoliu",  callback_data="help_portfolio"),
+             InlineKeyboardButton("👁 Watchlist",   callback_data="help_watchlist")],
+            [InlineKeyboardButton("🔔 Alerte",      callback_data="help_alerts"),
+             InlineKeyboardButton("📊 Rapoarte",    callback_data="help_reports")],
+            [InlineKeyboardButton("📈 Piata",       callback_data="help_market"),
+             InlineKeyboardButton("⚙️ Setari",      callback_data="help_settings")],
+        ])
+    else:
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("📁 Portfolio",   callback_data="help_portfolio"),
+             InlineKeyboardButton("👁 Watchlist",   callback_data="help_watchlist")],
+            [InlineKeyboardButton("🔔 Alerts",      callback_data="help_alerts"),
+             InlineKeyboardButton("📊 Reports",     callback_data="help_reports")],
+            [InlineKeyboardButton("📈 Market",      callback_data="help_market"),
+             InlineKeyboardButton("⚙️ Settings",    callback_data="help_settings")],
+        ])
+
+def back_keyboard(lang="ro"):
+    label = "⬅️ Inapoi" if lang == "ro" else "⬅️ Back"
+    return InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data="help_back")]])
+
+def get_help_keyboards(lang="ro"):
+    """Returns translated help keyboards based on user language."""
+    back = "⬅️ Inapoi" if lang == "ro" else "⬅️ Back"
+    return {
+        "help_portfolio": {
+            "title": "📁 Portofoliu" if lang == "ro" else "📁 Portfolio",
+            "keyboard": [
+                [InlineKeyboardButton("📊 Vezi Portofoliu" if lang == "ro" else "📊 View Portfolio", callback_data="exec_portfolio")],
+                [InlineKeyboardButton("📈 P&L Report",           callback_data="exec_pnl")],
+                [InlineKeyboardButton("➕ Adauga Moneda" if lang == "ro" else "➕ Add Coin", callback_data="exec_pf_add_list")],
+                [InlineKeyboardButton("➖ Sterge Moneda" if lang == "ro" else "➖ Remove Coin", callback_data="exec_pf_remove_list")],
+                [InlineKeyboardButton(back, callback_data="help_back")],
+            ]
+        },
+        "help_watchlist": {
+            "title": "👁 Watchlist",
+            "keyboard": [
+                [InlineKeyboardButton("👁 Vezi Watchlist" if lang == "ro" else "👁 View Watchlist", callback_data="exec_watchlist")],
+                [InlineKeyboardButton("➕ Adauga Moneda" if lang == "ro" else "➕ Add Coin", callback_data="exec_wl_add_list")],
+                [InlineKeyboardButton("➖ Sterge Moneda" if lang == "ro" else "➖ Remove Coin", callback_data="exec_wl_remove_list")],
+                [InlineKeyboardButton(back, callback_data="help_back")],
+            ]
+        },
+        "help_alerts": {
+            "title": "🔔 Alerte" if lang == "ro" else "🔔 Alerts",
+            "keyboard": [
+                [InlineKeyboardButton("🔔 Alertele Mele" if lang == "ro" else "🔔 My Alerts", callback_data="exec_alerts")],
+                [InlineKeyboardButton("📈 Seteaza Alerta EMA" if lang == "ro" else "📈 Set EMA Alert", callback_data="exec_alert_ema_menu")],
+                [InlineKeyboardButton("😱 Seteaza Alerta Fear" if lang == "ro" else "😱 Set Fear Alert", callback_data="exec_alert_fear_menu")],
+                [InlineKeyboardButton(back, callback_data="help_back")],
+            ]
+        },
+        "help_reports": {
+            "title": "📊 Rapoarte" if lang == "ro" else "📊 Reports",
+            "keyboard": [
+                [InlineKeyboardButton("📊 Raport Acum" if lang == "ro" else "📊 Report Now", callback_data="exec_report")],
+                [InlineKeyboardButton(back, callback_data="help_back")],
+            ]
+        },
+        "help_market": {
+            "title": "📈 Piata" if lang == "ro" else "📈 Market",
+            "keyboard": [
+                [InlineKeyboardButton("🔥 Trending", callback_data="exec_trending")],
+                [InlineKeyboardButton("📊 Stats Piata" if lang == "ro" else "📊 Market Stats", callback_data="exec_stats")],
+                [InlineKeyboardButton("🏭 Sectoare" if lang == "ro" else "🏭 Sectors", callback_data="exec_sector_list")],
+                [InlineKeyboardButton(back, callback_data="help_back")],
+            ]
+        },
+        "help_settings": {
+            "title": "⚙️ Setari" if lang == "ro" else "⚙️ Settings",
+            "keyboard": [
+                [InlineKeyboardButton("🇷🇴 Limba Romana", callback_data="exec_lang_ro")],
+                [InlineKeyboardButton("🇬🇧 English",      callback_data="exec_lang_en")],
+                [InlineKeyboardButton("💵 USD", callback_data="exec_cur_USD"),
+                 InlineKeyboardButton("💶 EUR", callback_data="exec_cur_EUR")],
+                [InlineKeyboardButton("💷 GBP", callback_data="exec_cur_GBP"),
+                 InlineKeyboardButton("🇷🇴 RON", callback_data="exec_cur_RON")],
+                [InlineKeyboardButton(back, callback_data="help_back")],
+            ]
+        },
+    }
+
+# Keep HELP_KEYBOARDS as alias for compatibility
+HELP_KEYBOARDS = get_help_keyboards("ro")
+
+# ─── GROUP PRIVACY HELPERS ─────────────────────────────────────────────────────
+
+async def _delete_cmd(update):
+    if update.effective_chat.type in ("group", "supergroup"):
+        try:
+            await update.message.delete()
+        except Exception:
+            pass
+
+async def _dm_or_reply(update, context, text, reply_markup=None):
+    uid = update.effective_user.id
+    if update.effective_chat.type not in ("group", "supergroup"):
+        await update.message.reply_text(text, reply_markup=reply_markup)
+        return
+    try:
+        await context.bot.send_message(chat_id=uid, text=text, reply_markup=reply_markup)
+    except Exception as e:
+        logger.warning(f"DM failed for uid={uid}: {e}")
+        lang     = get_user(uid).get("lang", "ro")
+        bot_info = await context.bot.get_me()
+        name     = update.effective_user.first_name or "tu"
+        btn      = "Primeste raspuns in privat" if lang == "ro" else "Get reply in private"
+        notif_kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton(btn, url=f"https://t.me/{bot_info.username}?start=help")
+        ]])
+        chat_id = update.effective_chat.id
+        msg = await context.bot.send_message(
+            chat_id=chat_id,
+            text=(f"{name}, porneste botul in privat pentru a primi raspunsuri:" if lang == "ro"
+                  else f"{name}, start the bot in private to receive replies:"),
+            reply_markup=notif_kb
+        )
+        async def _del(ctx):
+            try:
+                await ctx.bot.delete_message(chat_id=chat_id, message_id=msg.message_id)
+            except Exception:
+                pass
+        context.job_queue.run_once(_del, 30)
 
 # ─── COMMAND HANDLERS ──────────────────────────────────────────────────────────
 
-async def cmd_chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id   = update.effective_chat.id
-    user_id   = update.effective_user.id
-    thread_id = getattr(update.message, "message_thread_id", None)
-    lines = [
-        f"🆔 *Chat ID:* `{chat_id}`",
-        f"👤 *User ID:* `{user_id}`",
-        f"🧵 *Topic Thread ID:* `{thread_id}`" if thread_id else "🧵 *Topic Thread ID:* N/A",
-    ]
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
-
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_start(update, context):
     uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
+    get_user(uid)
+    save_data()
+    lang = get_user(uid).get('lang', 'ro')
     keyboard = [
-        [InlineKeyboardButton("📊 Top 10",      callback_data="top"),
-         InlineKeyboardButton("📊 Stats",       callback_data="stats")],
-        [InlineKeyboardButton("🫧 Bubbles 24h", callback_data="bubbles:24h"),
-         InlineKeyboardButton("📊 Stats",       callback_data="stats")],
-        [InlineKeyboardButton("🌐 Limba/Lang",  callback_data="lang"),
-         InlineKeyboardButton("❓ Help",         callback_data="help")],
+        [InlineKeyboardButton("📁 Portofoliu" if lang == 'ro' else "📁 Portfolio", callback_data="portfolio"),
+         InlineKeyboardButton("👁 Watchlist",  callback_data="watchlist")],
+        [InlineKeyboardButton("📊 Report",     callback_data="report"),
+         InlineKeyboardButton("❓ Help",        callback_data="help_back")],
     ]
-    await update.message.reply_text(t(uid, "start_msg"), parse_mode="Markdown",
-                                    reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(t(uid, "welcome"), reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
-    await update.message.reply_text(t(uid, "help_msg"), parse_mode="Markdown")
+async def cmd_help(update, context):
+    uid     = update.effective_user.id
+    lang    = get_user(uid).get("lang", "ro")
+    chat_id = update.effective_chat.id
 
-async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid      = update.effective_user.id
-    keyboard = [[
-        InlineKeyboardButton("🇷🇴 Română",  callback_data="setlang:ro"),
-        InlineKeyboardButton("🇬🇧 English", callback_data="setlang:en"),
-    ]]
-    await update.message.reply_text(t(uid, "lang_prompt"), parse_mode="Markdown",
-                                    reply_markup=InlineKeyboardMarkup(keyboard))
+    logger.info(f"cmd_help: uid={uid}, chat_id={chat_id}, type={update.effective_chat.type}")
 
-async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
-    if not context.args:
-        await update.message.reply_text(t(uid, "price_usage"), parse_mode="Markdown")
-        return
-    query = " ".join(context.args)
-    msg   = await update.message.reply_text(t(uid, "price_loading"))
-    slug  = resolve_slug(query)
-    data  = get_coin_data(slug) if slug else None
-    if not data:
-        await msg.edit_text(t(uid, "price_not_found", coin=query.upper()), parse_mode="Markdown")
-        return
-    lbl_price = "Price" if gl(uid) == "en" else "Preț"
-    lbl_7d    = "7 days" if gl(uid) == "en" else "7 zile"
-    lbl_30d   = "30 days" if gl(uid) == "en" else "30 zile"
-    lbl_vol   = "Vol 24h" if gl(uid) == "en" else "Volum 24h"
-    text = (
-        f"*{data['name']}* ({data['symbol']})  •  Rank #{data['rank']}\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"💰 {lbl_price}:   {fmt_price(data['price'])}\n"
-        f"📈 1h:       {fmt_change(data['change_1h'])}\n"
-        f"📈 24h:      {fmt_change(data['change_24h'])}\n"
-        f"📈 {lbl_7d}: {fmt_change(data['change_7d'])}\n"
-        f"📈 {lbl_30d}:{fmt_change(data['change_30d'])}\n"
-        f"─────────────────\n"
-        f"📊 24h High: {fmt_price(data['high_24h'])}\n"
-        f"📊 24h Low:  {fmt_price(data['low_24h'])}\n"
-        f"🏦 Mkt Cap:  {fmt_large(data['market_cap'])}\n"
-        f"💹 {lbl_vol}:{fmt_large(data['volume_24h'])}\n"
-    )
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"price:{slug}")]]
-    await msg.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    if update.effective_chat.type in ("group", "supergroup"):
+        # Sterge comanda /help din grup imediat
+        try:
+            await update.message.delete()
+        except Exception:
+            pass
 
-async def cmd_bubbles(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
-    valid_periods = ["1h", "24h", "7d", "30d", "1y"]
-    period = context.args[0].lower() if context.args else "24h"
-    if period not in valid_periods:
-        await update.message.reply_text(t(uid, "bubbles_usage"), parse_mode="Markdown")
-        return
-    msg   = await update.message.reply_text(t(uid, "bubbles_loading", period=period), parse_mode="Markdown")
-    coins = get_bubbles_data()
-    if not coins:
-        await msg.edit_text(t(uid, "bubbles_no_data"))
-        return
-    pages    = format_bubbles(coins, period, uid)
-    keyboard = [[
-        InlineKeyboardButton("1h",  callback_data="bubbles:1h"),
-        InlineKeyboardButton("24h", callback_data="bubbles:24h"),
-        InlineKeyboardButton("7d",  callback_data="bubbles:7d"),
-        InlineKeyboardButton("30d", callback_data="bubbles:30d"),
-        InlineKeyboardButton("1y",  callback_data="bubbles:1y"),
-    ]]
-    await msg.edit_text(pages[0], parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-    for page in pages[1:]:
-        await update.message.reply_text(page, parse_mode="Markdown")
-
-async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
-    msg   = await update.message.reply_text(t(uid, "top_loading"))
-    coins = get_top_coins(10)
-    if not coins:
-        await msg.edit_text(t(uid, "top_no_data"))
-        return
-    lines = [t(uid, "top_title")]
-    for i, c in enumerate(coins, 1):
-        chg   = c.get("change_24h") or 0
-        arrow = "▲" if chg >= 0 else "▼"
-        lines.append(f"{i}. *{c['symbol']}* — {fmt_price(c['price'])}  {'🟢' if chg>=0 else '🔴'} {arrow}{abs(chg):.1f}%")
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="top")]]
-    await msg.edit_text("\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
-    msg = await update.message.reply_text(t(uid, "stats_loading"))
-    fg = global_data = prices = None
-    for attempt in range(3):
-        if attempt > 0:
-            await asyncio.sleep(2)
-        fg          = get_fear_greed()
-        time.sleep(0.5)
-        global_data = get_global_market()
-        time.sleep(0.5)
-        prices      = get_btc_eth_prices()
-        if fg and global_data and prices:
-            break
-    if not fg or not global_data or not prices:
-        await msg.edit_text(t(uid, "stats_no_data"))
-        return
-    text     = format_stats(fg, global_data, prices, uid)
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
-    await msg.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
-    if len(context.args) < 2:
-        await update.message.reply_text(t(uid, "alert_usage"), parse_mode="Markdown")
-        return
-    query = context.args[0]
-    try:
-        target = float(context.args[1].replace(",", ""))
-    except ValueError:
-        await update.message.reply_text(t(uid, "alert_invalid"), parse_mode="Markdown")
-        return
-    msg  = await update.message.reply_text(t(uid, "alert_loading", coin=query.upper()), parse_mode="Markdown")
-    slug = resolve_slug(query)
-    data = get_coin_data(slug) if slug else None
-    if not data:
-        await msg.edit_text(t(uid, "alert_not_found", coin=query.upper()), parse_mode="Markdown")
-        return
-    current   = data["price"]
-    direction = "above" if target > current else "below"
-    if uid not in user_alerts:
-        user_alerts[uid] = []
-    user_alerts[uid].append({
-        "slug": slug, "symbol": data["symbol"],
-        "name": data["name"], "target": target, "direction": direction,
-    })
-    save_alerts()
-    arrow = t(uid, "alert_rise") if direction == "above" else t(uid, "alert_fall")
-    await msg.edit_text(
-        t(uid, "alert_set", name=data["name"], arrow=arrow,
-          price=fmt_price(target), current=fmt_price(current)),
-        parse_mode="Markdown")
-
-async def cmd_myalerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
-    alerts = user_alerts.get(uid, [])
-    if not alerts:
-        await update.message.reply_text(t(uid, "myalerts_none"), parse_mode="Markdown")
-        return
-    lines = [t(uid, "myalerts_title")]
-    for i, a in enumerate(alerts, 1):
-        arrow = "▲" if a["direction"] == "above" else "▼"
-        lines.append(f"{i}. *{a['name']}* ({a['symbol']}) {arrow} {fmt_price(a['target'])}")
-    lines.append(t(uid, "myalerts_footer"))
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
-
-async def cmd_removealert(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
-    alerts = user_alerts.get(uid, [])
-    if not alerts:
-        await update.message.reply_text(t(uid, "removealert_none"))
-        return
-    if not context.args:
-        await update.message.reply_text(t(uid, "removealert_usage"), parse_mode="Markdown")
-        return
-    try:
-        removed = alerts.pop(int(context.args[0]) - 1)
-        save_alerts()
+        # Incearca sa trimita DM
+        try:
+            await context.bot.send_message(
+                chat_id=uid,
+                text="Alege o categorie:" if lang == "ro" else "Choose a category:",
+                reply_markup=help_main_keyboard(lang)
+            )
+        except Exception as e:
+            logger.warning(f"cmd_help DM failed for uid={uid}: {e}")
+            # Utilizatorul nu a pornit botul in privat - trimite notificare cu deep-link
+            bot_info = await context.bot.get_me()
+            name = update.effective_user.first_name or "tu"
+            btn  = "Primeste help in privat" if lang == "ro" else "Get help in private"
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton(btn, url=f"https://t.me/{bot_info.username}?start=help")
+            ]])
+            msg = await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"{name}, apasa butonul pentru a porni botul in privat:"
+                if lang == "ro" else
+                f"{name}, press the button to start the bot in private:",
+                reply_markup=keyboard
+            )
+            # Sterge notificarea din grup dupa 30 de secunde
+            async def _delete_notification(ctx):
+                try:
+                    await ctx.bot.delete_message(chat_id=chat_id, message_id=msg.message_id)
+                except Exception:
+                    pass
+            context.job_queue.run_once(_delete_notification, 30)
+    else:
         await update.message.reply_text(
-            t(uid, "removealert_done", name=removed["name"], price=fmt_price(removed["target"])),
-            parse_mode="Markdown")
-    except (ValueError, IndexError):
-        await update.message.reply_text(t(uid, "removealert_bad"))
+            "Alege o categorie:" if lang == "ro" else "Choose a category:",
+            reply_markup=help_main_keyboard(lang)
+        )
 
-async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_chatid(update, context):
+    await update.message.reply_text(
+        "Chat ID: " + str(update.effective_chat.id) + "\nUser ID: " + str(update.effective_user.id))
+
+async def cmd_portfolio(update, context):
     uid  = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
+    user = get_user(uid)
     args = context.args
-
-    portfolio = user_portfolios.setdefault(uid, {})
+    await _delete_cmd(update)
 
     if args and args[0].lower() == "add":
         if len(args) < 3:
-            await update.message.reply_text(t(uid, "portfolio_usage"), parse_mode="Markdown")
+            await _dm_or_reply(update, context, "Usage: /portfolio add BTC 0.5 45000")
             return
         symbol = args[1].upper()
         try:
             amount    = float(args[2])
-            buy_price = float(args[3]) if len(args) > 3 else 0.0
+            buy_price = float(args[3]) if len(args) > 3 else 0
         except ValueError:
-            await update.message.reply_text("❌ Număr invalid.", parse_mode="Markdown")
+            await _dm_or_reply(update, context, "Numar invalid.")
             return
-        slug = resolve_slug(symbol)
-        portfolio[symbol] = {"slug": slug, "amount": amount, "buy_price": buy_price}
-        save_alerts()
-        await update.message.reply_text(
-            t(uid, "portfolio_added", symbol=symbol, amount=amount, price=fmt_price(buy_price)),
-            parse_mode="Markdown")
+        user["portfolio"][symbol] = {"slug": resolve_slug(symbol), "amount": amount, "buy_price": buy_price}
+        save_data()
+        await _dm_or_reply(update, context, t(uid, "portfolio_added", symbol, amount, fmt_price(buy_price)))
         return
 
     if args and args[0].lower() == "remove":
         if len(args) < 2:
-            await update.message.reply_text(t(uid, "portfolio_usage"), parse_mode="Markdown")
+            await _dm_or_reply(update, context, "Usage: /portfolio remove BTC")
             return
         symbol = args[1].upper()
-        if symbol not in portfolio:
-            await update.message.reply_text(t(uid, "portfolio_not_found", symbol=symbol), parse_mode="Markdown")
-            return
-        del portfolio[symbol]
-        save_alerts()
-        await update.message.reply_text(t(uid, "portfolio_removed", symbol=symbol), parse_mode="Markdown")
+        if symbol in user["portfolio"]:
+            del user["portfolio"][symbol]
+            save_data()
+            await _dm_or_reply(update, context, t(uid, "portfolio_removed", symbol))
+        else:
+            await _dm_or_reply(update, context, t(uid, "portfolio_not_found", symbol))
         return
 
-    if not portfolio:
-        await update.message.reply_text(t(uid, "portfolio_empty"), parse_mode="Markdown")
+    if not user.get("portfolio"):
+        await _dm_or_reply(update, context, t(uid, "portfolio_empty"))
         return
 
-    msg = await update.message.reply_text(t(uid, "loading"))
-    pf  = await asyncio.to_thread(calculate_portfolio, portfolio)
-    if not pf or not pf["coins"]:
-        await msg.edit_text("❌ Nu s-au putut obține prețurile.")
+    await _dm_or_reply(update, context, t(uid, "loading"))
+    pf = calculate_portfolio(uid)
+    if not pf:
+        await _dm_or_reply(update, context, t(uid, "no_data"))
         return
 
-    lines = [t(uid, "portfolio_title"), "━" * 20, ""]
+    currency = user.get("currency", "USD")
+    lines = ["Your Portfolio\n"]
     for c in pf["coins"]:
-        alloc = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
         lines.append(
-            f"*{c['symbol']}* — {fmt_price(c['current_price'])}\n"
-            f"  Cantitate: `{c['amount']}`  |  Valoare: `{fmt_price(c['current_value'])}`\n"
-            f"  Cumpărat: `{fmt_price(c['buy_price'])}`  |  24h: {fmt_pct(c['change_24h'])}\n"
-            f"  P&L: `{fmt_price(c['pnl'])}` ({fmt_pct(c['pnl_pct'])})  |  Alocare: `{alloc:.1f}%`\n"
+            c["symbol"] + " x" + str(c["amount"]) + "\n"
+            "  Value:  " + fmt_currency(c["current_value"], currency) + "\n"
+            "  Price:  " + fmt_price(c["current_price"]) + "\n"
+            "  24h:    " + fmt_pct(c["change_24h"]) + "\n"
+            "  P&L:    " + fmt_currency(c["pnl"], currency) + " (" + fmt_pct(c["pnl_pct"]) + ")\n"
         )
-    pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
-    lines += [
-        "━" * 20,
-        f"💼 *Total valoare:* `{fmt_price(pf['total_value'])}`",
-        f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
-        f"{pnl_emoji} *P&L total:*     `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})",
-    ]
-    await msg.edit_text("\n".join(lines), parse_mode="Markdown")
+    lines.append("\nTOTAL VALUE: " + fmt_currency(pf["total_value"], currency))
+    lines.append("TOTAL P&L:   " + fmt_currency(pf["total_pnl"], currency) + " (" + fmt_pct(pf["total_pnl_pct"]) + ")")
+    keyboard = [[InlineKeyboardButton("Refresh", callback_data="portfolio")]]
+    await _dm_or_reply(update, context, "\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
-
-async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid  = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
+async def cmd_pnl(update, context):
+    uid = update.effective_user.id
+    await _delete_cmd(update)
+    if not get_user(uid).get("portfolio"):
+        await _dm_or_reply(update, context, t(uid, "pnl_empty"))
         return
-    args = context.args
+    await _dm_or_reply(update, context, t(uid, "loading"))
+    pf = calculate_portfolio(uid)
+    if not pf:
+        await _dm_or_reply(update, context, t(uid, "no_data"))
+        return
+    currency = get_user(uid).get("currency", "USD")
+    lines = ["P&L Report\n"]
+    for c in sorted(pf["coins"], key=lambda x: x["pnl_pct"], reverse=True):
+        emoji = "🟢" if c["pnl"] >= 0 else "🔴"
+        lines.append(
+            emoji + " " + c["symbol"] + "\n"
+            "  Buy: " + fmt_price(c["buy_price"]) + " -> Now: " + fmt_price(c["current_price"]) + "\n"
+            "  P&L: " + fmt_currency(c["pnl"], currency) + " (" + fmt_pct(c["pnl_pct"]) + ")\n"
+        )
+    emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
+    lines.append(emoji + " TOTAL: " + fmt_currency(pf["total_pnl"], currency) + " (" + fmt_pct(pf["total_pnl_pct"]) + ")")
+    await _dm_or_reply(update, context, "\n".join(lines))
 
-    watchlist = user_watchlists.setdefault(uid, [])
+async def cmd_watchlist(update, context):
+    uid  = update.effective_user.id
+    user = get_user(uid)
+    args = context.args
+    await _delete_cmd(update)
 
     if args and args[0].lower() == "add":
         if len(args) < 2:
-            await update.message.reply_text(t(uid, "watchlist_usage"), parse_mode="Markdown")
+            await _dm_or_reply(update, context, "Usage: /watchlist add BTC")
             return
         symbol = args[1].upper()
-        if symbol in watchlist:
-            await update.message.reply_text(t(uid, "watchlist_already", symbol=symbol), parse_mode="Markdown")
-            return
-        watchlist.append(symbol)
-        save_alerts()
-        await update.message.reply_text(t(uid, "watchlist_added", symbol=symbol), parse_mode="Markdown")
+        if symbol not in user["watchlist"]:
+            user["watchlist"].append(symbol)
+            save_data()
+        await _dm_or_reply(update, context, t(uid, "watchlist_added", symbol))
         return
 
     if args and args[0].lower() == "remove":
         if len(args) < 2:
-            await update.message.reply_text(t(uid, "watchlist_usage"), parse_mode="Markdown")
+            await _dm_or_reply(update, context, "Usage: /watchlist remove BTC")
             return
         symbol = args[1].upper()
-        if symbol not in watchlist:
-            await update.message.reply_text(t(uid, "watchlist_not_found", symbol=symbol), parse_mode="Markdown")
-            return
-        watchlist.remove(symbol)
-        save_alerts()
-        await update.message.reply_text(t(uid, "watchlist_removed", symbol=symbol), parse_mode="Markdown")
+        if symbol in user["watchlist"]:
+            user["watchlist"].remove(symbol)
+            save_data()
+        await _dm_or_reply(update, context, t(uid, "watchlist_removed", symbol))
         return
 
-    if not watchlist:
-        await update.message.reply_text(t(uid, "watchlist_empty"), parse_mode="Markdown")
+    if not user.get("watchlist"):
+        await _dm_or_reply(update, context, t(uid, "watchlist_empty"))
         return
 
-    msg   = await update.message.reply_text(t(uid, "loading"))
-    slugs = [resolve_slug(s) for s in watchlist]
-    prices_data = await asyncio.to_thread(get_prices_batch, [s for s in slugs if s])
-
-    lines = [t(uid, "watchlist_title"), "━" * 20, ""]
-    for symbol, slug in zip(watchlist, slugs):
-        pd = prices_data.get(slug, {}) if slug else {}
+    await _dm_or_reply(update, context, t(uid, "loading"))
+    slugs = [resolve_slug(s) for s in user["watchlist"]]
+    prices_data = {}
+    try:
+        r = requests.get(
+            COINGECKO_BASE + "/simple/price",
+            params={
+                "ids": ",".join(slugs),
+                "vs_currencies": "usd",
+                "include_24hr_change": "true",
+            },
+            timeout=10,
+            headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
+        )
+        if r.status_code == 200:
+            prices_data = r.json()
+    except Exception as e:
+        logger.error("watchlist batch error: " + str(e))
+    lines = ["Watchlist\n"]
+    for symbol in user["watchlist"]:
+        slug = resolve_slug(symbol)
+        pd   = prices_data.get(slug, {})
         if pd:
             price  = pd.get("usd", 0)
-            chg    = pd.get("usd_24h_change", 0)
-            lines.append(f"• *{symbol}*: `{fmt_price(price)}`  {fmt_pct(chg)}")
+            change = pd.get("usd_24h_change", 0)
+            lines.append(symbol + ": " + fmt_price(price) + "\n  24h: " + fmt_pct(change) + "\n")
         else:
-            lines.append(f"• *{symbol}*: N/A")
+            lines.append(symbol + ": N/A\n")
+    keyboard = [[InlineKeyboardButton("Refresh", callback_data="watchlist")]]
+    await _dm_or_reply(update, context, "\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
-    await msg.edit_text("\n".join(lines), parse_mode="Markdown")
+async def cmd_trending(update, context):
+    await update.message.reply_text("Se incarca trending...")
+    coins = get_trending_coins()
+    if not coins:
+        await update.message.reply_text("Nu s-au putut obtine datele.")
+        return
+    lines = ["Trending pe CoinGecko\n"]
+    for item in coins[:7]:
+        c         = item["item"]
+        rank      = c.get("market_cap_rank", "?")
+        chg       = c.get("change_24h", 0)
+        chg_emoji = "🟢" if chg >= 0 else "🔴"
+        sign      = "+" if chg >= 0 else ""
+        lines.append("• " + c["name"] + " (" + c["symbol"] + ")  Rank #" + str(rank) + "  " + chg_emoji + " " + sign + "{:.1f}%".format(chg))
+    keyboard = [[InlineKeyboardButton("Refresh", callback_data="trending")]]
+    await update.message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
+async def cmd_stats(update, context):
+    msg = await update.message.reply_text("Se calculeaza statisticile...")
+    fg = global_data = prices = None
+    for attempt in range(3):
+        if attempt > 0:
+            await asyncio.sleep(2)
+        fg          = get_fear_greed_stats()
+        await asyncio.sleep(0.5)
+        global_data = get_global_market()
+        await asyncio.sleep(0.5)
+        prices      = get_btc_eth_prices()
+        if fg and global_data and prices:
+            break
+    if not fg or not global_data or not prices:
+        await msg.edit_text("Nu s-au putut obtine datele. Incearca din nou.")
+        return
+    lang_s = get_user(update.effective_user.id).get("lang", "ro")
+    text = format_stats_full(fg, global_data, prices, lang_s)
+    keyboard = [[InlineKeyboardButton("Refresh", callback_data="stats_full")]]
+    await msg.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_sector(update, context):
+    if not context.args:
+        lines = ["Sectoare disponibile:\n"]
+        for key, (_, label) in SECTORS.items():
+            lines.append("• /sector " + key + " - " + label)
+        lines.append("\nEx: /sector ai")
+        await update.message.reply_text("\n".join(lines))
+        return
+    key = context.args[0].lower()
+    if key not in SECTORS:
+        await update.message.reply_text("Sector necunoscut. Scrie /sector pentru lista.")
+        return
+    category_id, label = SECTORS[key]
+    await update.message.reply_text("Se incarca " + label + "...")
+    coins = get_sector_coins(category_id)
+    if not coins:
+        await update.message.reply_text("Nu s-au putut obtine datele. Incearca din nou.")
+        return
+    lines = [label + " - Top " + str(len(coins)) + "\n"]
+    for c in coins:
+        chg       = c["change_24h"]
+        chg_emoji = "🟢" if chg >= 0 else "🔴"
+        sign      = "+" if chg >= 0 else ""
+        lines.append(c["symbol"] + " #" + str(c["rank"]) + "  " + fmt_price(c["price"]) + "  " + chg_emoji + " " + sign + "{:.1f}%".format(chg))
+    keyboard = [[InlineKeyboardButton("Refresh", callback_data="sector_cb:" + key)]]
+    await update.message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def cmd_alert_ema(update, context):
+    uid  = update.effective_user.id
+    user = get_user(uid)
+    await _delete_cmd(update)
+    if len(context.args) < 2:
+        await _dm_or_reply(update, context, "Usage: /alert_ema BTC 200\nPeriod: 20, 50, 100, 200")
+        return
+    symbol = context.args[0].upper()
+    try:
+        period = int(context.args[1])
+    except ValueError:
+        await _dm_or_reply(update, context, "Period trebuie sa fie un numar (ex: 200)")
+        return
+    if period not in [20, 50, 100, 200]:
+        await _dm_or_reply(update, context, "Period trebuie sa fie: 20, 50, 100 sau 200")
+        return
+    slug = resolve_slug(symbol)
+    await _dm_or_reply(update, context, "Se calculeaza EMA...")
+    ema   = await asyncio.to_thread(get_ema, slug, period, "daily")
+    price = await asyncio.to_thread(get_current_price_simple, slug)
+    if ema is None:
+        await _dm_or_reply(update, context, "Nu s-a putut calcula EMA pentru " + symbol + ".")
+        return
+    position  = "above" if (price and price > ema) else "below"
+    alert_key = symbol + ":daily:" + str(period)
+    user["alerts"]["ema"][alert_key] = {
+        "symbol": symbol, "slug": slug, "timeframe": "daily",
+        "period": period, "position": position,
+    }
+    save_data()
+    pos_text = "DEASUPRA" if position == "above" else "SUB"
+    await _dm_or_reply(update, context,
+        "Alerta EMA setata!\n\n"
+        + symbol + " EMA" + str(period) + " DAILY\n"
+        + "EMA" + str(period) + ": " + fmt_price(ema) + "\n"
+        + "Pret curent: " + (fmt_price(price) if price else "N/A") + "\n"
+        + "Pozitie: " + pos_text + " EMA\n\n"
+        + "Vei fi notificat cand pretul incruciseaza EMA" + str(period) + "."
+    )
+
+async def cmd_alert_fear(update, context):
+    uid  = update.effective_user.id
+    user = get_user(uid)
+    await _delete_cmd(update)
+    if not context.args:
+        await _dm_or_reply(update, context, "Usage: /alert_fear 20")
+        return
+    try:
+        threshold = float(context.args[0])
+    except ValueError:
+        await _dm_or_reply(update, context, "Numar invalid.")
+        return
+    user["alerts"]["fear"] = threshold
+    save_data()
+    await _dm_or_reply(update, context, t(uid, "alert_fear_set", threshold))
+
+async def cmd_alerts(update, context):
+    uid    = update.effective_user.id
+    user   = get_user(uid)
+    await _delete_cmd(update)
+    alerts = user.get("alerts", {})
+    ema_a  = alerts.get("ema", {})
+    fear_a = alerts.get("fear")
+    if not ema_a and not fear_a:
+        await _dm_or_reply(update, context, t(uid, "alerts_empty"))
+        return
+    lines = ["Your Alerts\n"]
+    if ema_a:
+        lines.append("EMA Alerts:")
+        for key, info in ema_a.items():
+            lines.append("  " + info["symbol"] + " EMA" + str(info["period"]) + " DAILY (currently " + info["position"] + " EMA)")
+    if fear_a:
+        lines.append("Fear & Greed Alert: < " + str(fear_a))
+    await _dm_or_reply(update, context, "\n".join(lines))
+
+async def cmd_report(update, context):
     uid = update.effective_user.id
-    if OWNER_ID and uid != OWNER_ID:
+    await _delete_cmd(update)
+    await _dm_or_reply(update, context, t(uid, "loading"))
+    text = await generate_report(uid)
+    keyboard = [[InlineKeyboardButton("Refresh", callback_data="report")]]
+    await _dm_or_reply(update, context, text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def cmd_set_report(update, context):
+    uid  = update.effective_user.id
+    user = get_user(uid)
+    await _delete_cmd(update)
+    if not context.args:
+        await _dm_or_reply(update, context, "Usage: /set_report 08:00")
         return
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
+    time_str = context.args[0]
+    try:
+        datetime.datetime.strptime(time_str, "%H:%M")
+    except ValueError:
+        await _dm_or_reply(update, context, "Format invalid. Foloseste HH:MM (ex: 08:00)")
         return
+    user["report_time"]    = time_str
+    user["report_enabled"] = True
+    save_data()
+    await _dm_or_reply(update, context, t(uid, "report_set", time_str))
 
-    msg = await update.message.reply_text("⏳ Se trimit anunțurile...", parse_mode="Markdown")
+async def cmd_set_lang(update, context):
+    uid  = update.effective_user.id
+    user = get_user(uid)
+    await _delete_cmd(update)
+    if not context.args or context.args[0].lower() not in ["ro", "en"]:
+        await _dm_or_reply(update, context, "Usage: /set_lang ro or /set_lang en")
+        return
+    user["lang"] = context.args[0].lower()
+    save_data()
+    await _dm_or_reply(update, context, t(uid, "lang_set"))
 
-    jobs = [
-        ("📈 Date & Analize", TOPIC_DATE,   auto_stats_job),
-        ("📊 Piață",          TOPIC_PIATA,  auto_trending_job),
-        ("📰 Știri",          TOPIC_STIRI,  auto_stiri_job),
-    ]
+async def cmd_set_currency(update, context):
+    uid   = update.effective_user.id
+    user  = get_user(uid)
+    await _delete_cmd(update)
+    valid = ["USD", "EUR", "GBP", "RON"]
+    if not context.args or context.args[0].upper() not in valid:
+        await _dm_or_reply(update, context, "Usage: /set_currency USD\nOptions: " + ", ".join(valid))
+        return
+    user["currency"] = context.args[0].upper()
+    save_data()
+    await _dm_or_reply(update, context, t(uid, "currency_set", user["currency"]))
 
-    lines = ["*🧪 Test anunțuri automate:*\n"]
-    for label, topic_id, job_fn in jobs:
-        if not topic_id:
-            lines.append(f"⚪ {label} — neconfigurat")
-            continue
-        try:
-            await job_fn(context)
-            lines.append(f"✅ {label} — trimis")
-        except Exception as e:
-            lines.append(f"❌ {label} — `{e}`")
 
-    await msg.edit_text("\n".join(lines), parse_mode="Markdown")
+# ─── CALLBACKS ─────────────────────────────────────────────────────────────────
 
-# ─── INLINE BUTTON CALLBACKS ───────────────────────────────────────────────────
-
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def button_callback(update, context):
     query = update.callback_query
     await query.answer()
-    data  = query.data
+    uid  = update.effective_user.id
+    data = query.data
+    lang = get_user(uid).get("lang", "ro")
+    back = "⬅️ Inapoi" if lang == "ro" else "⬅️ Back"
 
-    if data == "top":
-        coins = get_top_coins(10)
-        if not coins:
-            await query.edit_message_text("❌ Nu s-au putut obține datele.")
+    # ── Help main menu ─────────────────────────────────────────────────────────
+    if data in ("help_back", "help"):
+        label = "Alege o categorie:" if lang == "ro" else "Choose a category:"
+        await query.edit_message_text(label, reply_markup=help_main_keyboard(lang))
+
+    elif data in get_help_keyboards(lang):
+        cat = get_help_keyboards(lang)[data]
+        await query.edit_message_text(cat["title"], reply_markup=InlineKeyboardMarkup(cat["keyboard"]))
+
+    # ── Start menu shortcuts ───────────────────────────────────────────────────
+    elif data == "portfolio":
+        user = get_user(uid)
+        if not user.get("portfolio"):
+            await query.edit_message_text(t(uid, "portfolio_empty"), reply_markup=back_keyboard(lang))
             return
-        lines = ["*🏆 Top 10 după Market Cap*\n"]
-        for i, c in enumerate(coins, 1):
-            chg   = c.get("change_24h") or 0
-            arrow = "▲" if chg >= 0 else "▼"
+        pf = calculate_portfolio(uid)
+        if not pf:
+            await query.edit_message_text(t(uid, "no_data"), reply_markup=back_keyboard(lang))
+            return
+        currency = user.get("currency", "USD")
+        lines = [("Your Portfolio" if lang == "en" else "Portofoliul Tau") + "\n"]
+        for c in pf["coins"]:
             lines.append(
-                f"{i}. *{c['symbol']}* — {fmt_price(c['price'])}  "
-                f"{'🟢' if chg>=0 else '🔴'} {arrow}{abs(chg):.1f}%")
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="top")]]
-        await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
+                c["symbol"] + " x" + str(c["amount"]) + "\n"
+                "  Value:  " + fmt_currency(c["current_value"], currency) + "\n"
+                "  Price:  " + fmt_price(c["current_price"]) + "\n"
+                "  24h:    " + fmt_pct(c["change_24h"]) + "\n"
+                "  P&L:    " + fmt_currency(c["pnl"], currency) + " (" + fmt_pct(c["pnl_pct"]) + ")\n"
+            )
+        lines.append("\nTOTAL VALUE: " + fmt_currency(pf["total_value"], currency))
+        lines.append("TOTAL P&L:   " + fmt_currency(pf["total_pnl"], currency) + " (" + fmt_pct(pf["total_pnl_pct"]) + ")")
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="portfolio")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
-
-    elif data.startswith("bubbles:"):
-        period = data.split(":", 1)[1]
-        await query.edit_message_text(f"⏳ Se încarcă CryptoBubbles ({period})...", parse_mode="Markdown")
-        coins = get_bubbles_data()
-        if not coins:
-            await query.edit_message_text("❌ Nu s-au putut obține datele.")
+    elif data == "watchlist":
+        user = get_user(uid)
+        if not user.get("watchlist"):
+            await query.edit_message_text(t(uid, "watchlist_empty"), reply_markup=back_keyboard(lang))
             return
-        pages    = format_bubbles(coins, period)
-        keyboard = [[
-            InlineKeyboardButton("1h",  callback_data="bubbles:1h"),
-            InlineKeyboardButton("24h", callback_data="bubbles:24h"),
-            InlineKeyboardButton("7d",  callback_data="bubbles:7d"),
-            InlineKeyboardButton("30d", callback_data="bubbles:30d"),
-            InlineKeyboardButton("1y",  callback_data="bubbles:1y"),
-        ]]
-        await query.edit_message_text(pages[0], parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
-        for page in pages[1:]:
-            await query.message.reply_text(page, parse_mode="Markdown")
+        slugs = [resolve_slug(s) for s in user["watchlist"]]
+        prices_data = {}
+        try:
+            r = requests.get(COINGECKO_BASE + "/simple/price",
+                params={"ids": ",".join(slugs), "vs_currencies": "usd", "include_24hr_change": "true"},
+                timeout=10, headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"})
+            if r.status_code == 200:
+                prices_data = r.json()
+        except Exception as e:
+            logger.error("watchlist batch: " + str(e))
+        header = "Watchlist (24h)\n"
+        lines = [header]
+        for symbol in user["watchlist"]:
+            pd = prices_data.get(resolve_slug(symbol), {})
+            if pd:
+                lines.append(symbol + ": " + fmt_price(pd.get("usd", 0)) + " | " + fmt_pct(pd.get("usd_24h_change", 0)) + " (24h)")
+            else:
+                lines.append(symbol + ": N/A")
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="watchlist")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "stats":
+    elif data == "report":
+        text = await generate_report(uid)
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="report")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    # ── Exec commands from help menu ───────────────────────────────────────────
+    elif data == "exec_portfolio":
+        user = get_user(uid)
+        if not user.get("portfolio"):
+            await query.edit_message_text(t(uid, "portfolio_empty"), reply_markup=back_keyboard(lang))
+            return
+        pf = calculate_portfolio(uid)
+        if not pf:
+            await query.edit_message_text(t(uid, "no_data"), reply_markup=back_keyboard(lang))
+            return
+        currency = user.get("currency", "USD")
+        lines = [("Your Portfolio" if lang == "en" else "Portofoliul Tau") + "\n"]
+        for c in pf["coins"]:
+            lines.append(
+                c["symbol"] + " x" + str(c["amount"]) + "\n"
+                "  Value:  " + fmt_currency(c["current_value"], currency) + "\n"
+                "  Price:  " + fmt_price(c["current_price"]) + "\n"
+                "  24h:    " + fmt_pct(c["change_24h"]) + "\n"
+                "  P&L:    " + fmt_currency(c["pnl"], currency) + " (" + fmt_pct(c["pnl_pct"]) + ")\n"
+            )
+        lines.append("\nTOTAL VALUE: " + fmt_currency(pf["total_value"], currency))
+        lines.append("TOTAL P&L:   " + fmt_currency(pf["total_pnl"], currency) + " (" + fmt_pct(pf["total_pnl_pct"]) + ")")
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="exec_portfolio")],
+                    [InlineKeyboardButton(back, callback_data="help_portfolio")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data == "exec_pnl":
+        user = get_user(uid)
+        if not user.get("portfolio"):
+            await query.edit_message_text(t(uid, "pnl_empty"), reply_markup=back_keyboard(lang))
+            return
+        pf = calculate_portfolio(uid)
+        if not pf:
+            await query.edit_message_text(t(uid, "no_data"), reply_markup=back_keyboard(lang))
+            return
+        currency = user.get("currency", "USD")
+        lines = ["P&L Report\n"]
+        for c in sorted(pf["coins"], key=lambda x: x["pnl_pct"], reverse=True):
+            emoji = "🟢" if c["pnl"] >= 0 else "🔴"
+            lines.append(
+                emoji + " " + c["symbol"] + "\n"
+                "  Buy: " + fmt_price(c["buy_price"]) + " -> Now: " + fmt_price(c["current_price"]) + "\n"
+                "  P&L: " + fmt_currency(c["pnl"], currency) + " (" + fmt_pct(c["pnl_pct"]) + ")\n"
+            )
+        e2 = "🟢" if pf["total_pnl"] >= 0 else "🔴"
+        lines.append(e2 + " TOTAL: " + fmt_currency(pf["total_pnl"], currency) + " (" + fmt_pct(pf["total_pnl_pct"]) + ")")
+        keyboard = [[InlineKeyboardButton(back, callback_data="help_portfolio")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data == "exec_watchlist":
+        user = get_user(uid)
+        if not user.get("watchlist"):
+            await query.edit_message_text(t(uid, "watchlist_empty"), reply_markup=back_keyboard(lang))
+            return
+        slugs = [resolve_slug(s) for s in user["watchlist"]]
+        prices_data = {}
+        try:
+            r = requests.get(COINGECKO_BASE + "/simple/price",
+                params={"ids": ",".join(slugs), "vs_currencies": "usd", "include_24hr_change": "true"},
+                timeout=10, headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"})
+            if r.status_code == 200:
+                prices_data = r.json()
+        except Exception as e:
+            logger.error("watchlist batch: " + str(e))
+        lines = [("Watchlist (24h)" if lang == "en" else "Watchlist (24h)") + "\n"]
+        for symbol in user["watchlist"]:
+            pd = prices_data.get(resolve_slug(symbol), {})
+            if pd:
+                lines.append(symbol + ": " + fmt_price(pd.get("usd", 0)) + " | " + fmt_pct(pd.get("usd_24h_change", 0)) + " (24h)")
+            else:
+                lines.append(symbol + ": N/A")
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="exec_watchlist")],
+                    [InlineKeyboardButton(back, callback_data="help_watchlist")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data == "exec_alerts":
+        user   = get_user(uid)
+        alerts = user.get("alerts", {})
+        ema_a  = alerts.get("ema", {})
+        fear_a = alerts.get("fear")
+        if not ema_a and not fear_a:
+            await query.edit_message_text(t(uid, "alerts_empty"), reply_markup=back_keyboard(lang))
+            return
+        lines = [("Your Alerts" if lang == "en" else "Alertele Tale") + "\n"]
+        if ema_a:
+            lines.append("EMA Alerts:" if lang == "en" else "Alerte EMA:")
+            for key, info in ema_a.items():
+                lines.append("  " + info["symbol"] + " EMA" + str(info["period"]) + " DAILY (" + info["position"] + " EMA)")
+        if fear_a:
+            lines.append(("Fear & Greed Alert: < " if lang == "en" else "Alerta Fear & Greed: < ") + str(fear_a))
+        keyboard = [[InlineKeyboardButton(back, callback_data="help_alerts")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data == "exec_report":
+        text = await generate_report(uid)
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="exec_report")],
+                    [InlineKeyboardButton(back, callback_data="help_reports")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data == "exec_trending":
+        if "trending" in _cache:
+            del _cache["trending"]
+        coins = get_trending_coins()
+        if not coins:
+            await query.edit_message_text(t(uid, "no_data"), reply_markup=back_keyboard(lang))
+            return
+        header = "Trending pe CoinGecko" if lang == "ro" else "Trending on CoinGecko"
+        lines = [header + "\n"]
+        for item in coins[:7]:
+            c         = item["item"]
+            rank      = c.get("market_cap_rank", "?")
+            chg       = c.get("change_24h", 0)
+            chg_emoji = "🟢" if chg >= 0 else "🔴"
+            sign      = "+" if chg >= 0 else ""
+            lines.append("• " + c["name"] + " (" + c["symbol"] + ")  Rank #" + str(rank) + "  " + chg_emoji + " " + sign + "{:.1f}%".format(chg))
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="exec_trending")],
+                    [InlineKeyboardButton(back, callback_data="help_market")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data == "exec_stats":
         fg = global_data = prices = None
         for attempt in range(3):
             if attempt > 0:
                 await asyncio.sleep(2)
-            fg          = get_fear_greed()
-            time.sleep(0.5)
+            fg          = get_fear_greed_stats()
+            await asyncio.sleep(0.5)
             global_data = get_global_market()
-            time.sleep(0.5)
+            await asyncio.sleep(0.5)
             prices      = get_btc_eth_prices()
             if fg and global_data and prices:
                 break
         if not fg or not global_data or not prices:
-            await query.edit_message_text("❌ Nu s-au putut obține datele. Încearcă în 1 minut.")
+            await query.edit_message_text(t(uid, "no_data"), reply_markup=back_keyboard(lang))
             return
-        text     = format_stats(fg, global_data, prices)
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
-        await query.edit_message_text(text, parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
+        text = format_stats_full(fg, global_data, prices)
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="exec_stats")],
+                    [InlineKeyboardButton(back, callback_data="help_market")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "help":
-        uid = query.from_user.id
-        await query.edit_message_text(t(uid, "help_msg"), parse_mode="Markdown")
+    elif data == "exec_sector_list":
+        rows = []
+        for key, (_, label) in SECTORS.items():
+            rows.append([InlineKeyboardButton(label, callback_data="exec_sector:" + key)])
+        rows.append([InlineKeyboardButton(back, callback_data="help_market")])
+        title = "Alege un sector:" if lang == "ro" else "Choose a sector:"
+        await query.edit_message_text(title, reply_markup=InlineKeyboardMarkup(rows))
 
-    elif data == "lang":
-        uid      = query.from_user.id
-        keyboard = [[
-            InlineKeyboardButton("🇷🇴 Română",  callback_data="setlang:ro"),
-            InlineKeyboardButton("🇬🇧 English", callback_data="setlang:en"),
-        ]]
-        await query.edit_message_text(t(uid, "lang_prompt"), parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif data.startswith("setlang:"):
-        uid  = query.from_user.id
-        lang = data.split(":", 1)[1]
-        user_lang[uid] = lang
-        save_alerts()
-        await query.edit_message_text(t(uid, "lang_set"), parse_mode="Markdown")
-
-    elif data.startswith("price:"):
-        slug = data.split(":", 1)[1]
-        info = get_coin_data(slug)
-        if not info:
-            await query.edit_message_text("❌ Nu s-au putut obține datele.")
+    elif data.startswith("exec_sector:"):
+        key = data.split(":", 1)[1]
+        if key not in SECTORS:
+            await query.answer("Invalid sector.")
             return
-        text = (
-            f"*{info['name']}* ({info['symbol']})  •  Rank #{info['rank']}\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"💰 Preț:      {fmt_price(info['price'])}\n"
-            f"📈 1h:        {fmt_change(info['change_1h'])}\n"
-            f"📈 24h:       {fmt_change(info['change_24h'])}\n"
-            f"📈 7 zile:    {fmt_change(info['change_7d'])}\n"
-            f"📈 30 zile:   {fmt_change(info['change_30d'])}\n"
-            f"─────────────────\n"
-            f"📊 24h High:  {fmt_price(info['high_24h'])}\n"
-            f"📊 24h Low:   {fmt_price(info['low_24h'])}\n"
-            f"🏦 Mkt Cap:   {fmt_large(info['market_cap'])}\n"
-            f"💹 Volum 24h: {fmt_large(info['volume_24h'])}\n"
-        )
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"price:{slug}")]]
-        await query.edit_message_text(text, parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
+        category_id, label = SECTORS[key]
+        coins = get_sector_coins(category_id)
+        if not coins:
+            await query.edit_message_text(t(uid, "no_data"), reply_markup=back_keyboard(lang))
+            return
+        lines = [label + " - Top " + str(len(coins)) + "\n"]
+        for c in coins:
+            chg       = c["change_24h"]
+            chg_emoji = "🟢" if chg >= 0 else "🔴"
+            sign      = "+" if chg >= 0 else ""
+            lines.append(c["symbol"] + " #" + str(c["rank"]) + "  " + fmt_price(c["price"]) + "  " + chg_emoji + " " + sign + "{:.1f}%".format(chg))
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="exec_sector:" + key)],
+                    [InlineKeyboardButton(back, callback_data="exec_sector_list")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ─── AUTO JOBS ─────────────────────────────────────────────────────────────────
+    # ── Watchlist add/remove ───────────────────────────────────────────────────
+    elif data == "exec_wl_add_list":
+        rows = []
+        row  = []
+        for i, coin in enumerate(PREDEFINED_COINS):
+            row.append(InlineKeyboardButton(coin, callback_data="wl_add:" + coin))
+            if len(row) == 4:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        rows.append([InlineKeyboardButton(back, callback_data="help_watchlist")])
+        title = "Alege moneda de adaugat:" if lang == "ro" else "Choose coin to add:"
+        await query.edit_message_text(title, reply_markup=InlineKeyboardMarkup(rows))
 
-async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
-    if not user_alerts:
-        return
-    for uid, alerts in list(user_alerts.items()):
-        to_remove = []
-        for i, alert in enumerate(alerts):
-            data = get_coin_data(alert["slug"])
-            if not data:
-                continue
-            current   = data["price"]
-            target    = alert["target"]
-            direction = alert.get("direction", "above")
-            hit = (current >= target) if direction == "above" else (current <= target)
-            if not hit:
-                continue
-            verb = t(uid, "alert_rose") if direction == "above" else t(uid, "alert_fell")
-            text = t(uid, "alert_triggered",
-                     name=alert["name"], symbol=alert["symbol"],
-                     verb=verb, price=fmt_price(current), target=fmt_price(target))
-            try:
-                if TOPIC_PREDICTII and GROUP_CHAT_ID:
-                    await post_to_topic(context.bot, TOPIC_PREDICTII, text)
-                else:
-                    await context.bot.send_message(
-                        chat_id=uid, text=text, parse_mode="Markdown")
-            except Exception as e:
-                logger.error(f"Alert send failed: {e}")
-            to_remove.append(i)
-        for i in reversed(to_remove):
-            alerts.pop(i)
-        if to_remove:
-            save_alerts()
+    elif data == "exec_wl_remove_list":
+        user = get_user(uid)
+        wl   = user.get("watchlist", [])
+        if not wl:
+            await query.edit_message_text(t(uid, "watchlist_empty"), reply_markup=back_keyboard(lang))
+            return
+        rows = []
+        row  = []
+        for coin in wl:
+            row.append(InlineKeyboardButton(coin, callback_data="wl_remove:" + coin))
+            if len(row) == 4:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        rows.append([InlineKeyboardButton(back, callback_data="help_watchlist")])
+        title = "Alege moneda de sters:" if lang == "ro" else "Choose coin to remove:"
+        await query.edit_message_text(title, reply_markup=InlineKeyboardMarkup(rows))
 
-async def auto_stats_job(context: ContextTypes.DEFAULT_TYPE):
-    """Trimite stats automat în TOPIC_DATE la 00:00 și 12:00."""
-    if not TOPIC_DATE:
-        return
-    try:
-        fg          = get_fear_greed()
-        time.sleep(0.5)
-        global_data = get_global_market()
-        time.sleep(0.5)
-        prices      = get_btc_eth_prices()
+    elif data.startswith("wl_add:"):
+        coin = data.split(":", 1)[1]
+        user = get_user(uid)
+        if coin not in user["watchlist"]:
+            user["watchlist"].append(coin)
+            save_data()
+        rows = []
+        row  = []
+        for c in PREDEFINED_COINS:
+            row.append(InlineKeyboardButton(c, callback_data="wl_add:" + c))
+            if len(row) == 4:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        rows.append([InlineKeyboardButton(back, callback_data="help_watchlist")])
+        title = ("Adaugat! Alege alta moneda:" if lang == "ro" else "Added! Choose another:") + " (" + coin + ")"
+        await query.edit_message_text(title, reply_markup=InlineKeyboardMarkup(rows))
+
+    elif data.startswith("wl_remove:"):
+        coin = data.split(":", 1)[1]
+        user = get_user(uid)
+        if coin in user["watchlist"]:
+            user["watchlist"].remove(coin)
+            save_data()
+        wl = user.get("watchlist", [])
+        if not wl:
+            await query.edit_message_text(t(uid, "watchlist_empty"), reply_markup=back_keyboard(lang))
+            return
+        rows = []
+        row  = []
+        for c in wl:
+            row.append(InlineKeyboardButton(c, callback_data="wl_remove:" + c))
+            if len(row) == 4:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        rows.append([InlineKeyboardButton(back, callback_data="help_watchlist")])
+        title = "Alege moneda de sters:" if lang == "ro" else "Choose coin to remove:"
+        await query.edit_message_text(title, reply_markup=InlineKeyboardMarkup(rows))
+
+    # ── Portfolio add/remove ───────────────────────────────────────────────────
+    elif data == "exec_pf_add_list":
+        rows = []
+        row  = []
+        for coin in PREDEFINED_COINS:
+            row.append(InlineKeyboardButton(coin, callback_data="pf_add_pick:" + coin))
+            if len(row) == 4:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        rows.append([InlineKeyboardButton(back, callback_data="help_portfolio")])
+        title = "Alege moneda de adaugat:" if lang == "ro" else "Choose coin to add:"
+        await query.edit_message_text(title, reply_markup=InlineKeyboardMarkup(rows))
+
+    elif data == "exec_pf_remove_list":
+        user = get_user(uid)
+        pf   = user.get("portfolio", {})
+        if not pf:
+            await query.edit_message_text(t(uid, "portfolio_empty"), reply_markup=back_keyboard(lang))
+            return
+        rows = []
+        row  = []
+        for coin in pf.keys():
+            row.append(InlineKeyboardButton(coin, callback_data="pf_remove:" + coin))
+            if len(row) == 4:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        rows.append([InlineKeyboardButton(back, callback_data="help_portfolio")])
+        title = "Alege moneda de sters:" if lang == "ro" else "Choose coin to remove:"
+        await query.edit_message_text(title, reply_markup=InlineKeyboardMarkup(rows))
+
+    elif data.startswith("pf_add_pick:"):
+        coin = data.split(":", 1)[1]
+        _user_state[uid] = "pf_add:" + coin
+        prompt = ("Scrie cantitatea si pretul pentru " + coin + " (ex: 0.5 45000):"
+                  if lang == "ro" else
+                  "Enter amount and buy price for " + coin + " (e.g. 0.5 45000):")
+        await query.message.reply_text(prompt,
+            reply_markup=ForceReply(selective=True, input_field_placeholder="ex: 0.5 45000"))
+
+    elif data.startswith("pf_remove:"):
+        coin = data.split(":", 1)[1]
+        user = get_user(uid)
+        if coin in user["portfolio"]:
+            del user["portfolio"][coin]
+            save_data()
+        pf = user.get("portfolio", {})
+        if not pf:
+            await query.edit_message_text(t(uid, "portfolio_empty"), reply_markup=back_keyboard(lang))
+            return
+        rows = []
+        row  = []
+        for c in pf.keys():
+            row.append(InlineKeyboardButton(c, callback_data="pf_remove:" + c))
+            if len(row) == 4:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        rows.append([InlineKeyboardButton(back, callback_data="help_portfolio")])
+        title = "Alege moneda de sters:" if lang == "ro" else "Choose coin to remove:"
+        await query.edit_message_text(title, reply_markup=InlineKeyboardMarkup(rows))
+
+    # ── Alerts setup ──────────────────────────────────────────────────────────
+    elif data == "exec_alert_ema_menu":
+        rows = []
+        row  = []
+        for coin in PREDEFINED_COINS:
+            row.append(InlineKeyboardButton(coin, callback_data="alert_ema_coin:" + coin))
+            if len(row) == 4:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        rows.append([InlineKeyboardButton(back, callback_data="help_alerts")])
+        title = "Alege moneda pentru alerta EMA200 Daily:" if lang == "ro" else "Choose coin for EMA200 Daily alert:"
+        await query.edit_message_text(title, reply_markup=InlineKeyboardMarkup(rows))
+
+    elif data.startswith("alert_ema_coin:"):
+        coin = data.split(":", 1)[1]
+        user = get_user(uid)
+        slug  = resolve_slug(coin)
+        msg_calc = "Se calculeaza EMA200 pentru " + coin + "..." if lang == "ro" else "Calculating EMA200 for " + coin + "..."
+        await query.edit_message_text(msg_calc)
+        ema   = await asyncio.to_thread(get_ema, slug, 200, "daily")
+        price = await asyncio.to_thread(get_current_price_simple, slug)
+        if ema is None:
+            keyboard = [[InlineKeyboardButton(back, callback_data="exec_alert_ema_menu")]]
+            err = ("Nu s-a putut calcula EMA pentru " + coin + "." if lang == "ro"
+                   else "Could not calculate EMA for " + coin + ".")
+            await query.edit_message_text(err, reply_markup=InlineKeyboardMarkup(keyboard))
+            return
+        position  = "above" if (price and price > ema) else "below"
+        alert_key = coin + ":daily:200"
+        if "ema" not in user["alerts"]:
+            user["alerts"]["ema"] = {}
+        user["alerts"]["ema"][alert_key] = {
+            "symbol": coin, "slug": slug, "timeframe": "daily",
+            "period": 200, "position": position,
+        }
+        save_data()
+        pos_text = ("DEASUPRA" if position == "above" else "SUB") if lang == "ro" else ("ABOVE" if position == "above" else "BELOW")
+        keyboard = [[InlineKeyboardButton(back, callback_data="help_alerts")]]
+        msg_ok = ("Alerta EMA200 setata pentru " + coin + "!\n\n"
+                  + "EMA200: " + fmt_price(ema) + "\n"
+                  + "Pret curent: " + (fmt_price(price) if price else "N/A") + "\n"
+                  + "Pozitie: " + pos_text + " EMA\n\n"
+                  + "Vei fi notificat cand pretul incruciseaza EMA200."
+                  if lang == "ro" else
+                  "EMA200 alert set for " + coin + "!\n\n"
+                  + "EMA200: " + fmt_price(ema) + "\n"
+                  + "Current price: " + (fmt_price(price) if price else "N/A") + "\n"
+                  + "Position: " + pos_text + " EMA\n\n"
+                  + "You will be notified when price crosses EMA200.")
+        await query.edit_message_text(msg_ok, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data == "exec_alert_fear_menu":
+        rows = [
+            [InlineKeyboardButton("10", callback_data="alert_fear_set:10"),
+             InlineKeyboardButton("15", callback_data="alert_fear_set:15"),
+             InlineKeyboardButton("20", callback_data="alert_fear_set:20"),
+             InlineKeyboardButton("25", callback_data="alert_fear_set:25")],
+            [InlineKeyboardButton("30", callback_data="alert_fear_set:30"),
+             InlineKeyboardButton("35", callback_data="alert_fear_set:35"),
+             InlineKeyboardButton("40", callback_data="alert_fear_set:40"),
+             InlineKeyboardButton("45", callback_data="alert_fear_set:45")],
+            [InlineKeyboardButton(back, callback_data="help_alerts")],
+        ]
+        fg = get_fear_greed()
+        current = (("Fear & Greed curent: " if lang == "ro" else "Current Fear & Greed: ")
+                   + str(fg["value"]) + "/100") if fg else ""
+        title = ("Alege pragul pentru alerta Fear & Greed:\n(primesti alerta cand scade sub valoarea aleasa)\n\n"
+                 if lang == "ro" else
+                 "Choose Fear & Greed alert threshold:\n(you get alerted when it drops below)\n\n") + current
+        await query.edit_message_text(title, reply_markup=InlineKeyboardMarkup(rows))
+
+    elif data.startswith("alert_fear_set:"):
+        threshold = float(data.split(":", 1)[1])
+        user = get_user(uid)
+        user["alerts"]["fear"] = threshold
+        save_data()
+        keyboard = [[InlineKeyboardButton(back, callback_data="help_alerts")]]
+        msg_fear = ("Alerta Fear & Greed setata!\n\nVei fi notificat cand Fear & Greed scade sub " + str(int(threshold)) + "."
+                    if lang == "ro" else
+                    "Fear & Greed alert set!\n\nYou will be notified when Fear & Greed drops below " + str(int(threshold)) + ".")
+        await query.edit_message_text(msg_fear, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    # ── Settings ───────────────────────────────────────────────────────────────
+    elif data.startswith("exec_lang_"):
+        new_lang = data.split("_")[-1]
+        user = get_user(uid)
+        user["lang"] = new_lang
+        save_data()
+        new_back = "⬅️ Inapoi" if new_lang == "ro" else "⬅️ Back"
+        msg_lang = "Limba setata: Romana" if new_lang == "ro" else "Language set: English"
+        keyboard = [[InlineKeyboardButton(new_back, callback_data="help_settings")]]
+        await query.edit_message_text(msg_lang, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("exec_cur_"):
+        currency = data.split("_")[-1]
+        user = get_user(uid)
+        user["currency"] = currency
+        save_data()
+        for key in list(_cache.keys()):
+            if key.startswith("rate:"):
+                del _cache[key]
+        msg_cur = ("Moneda setata: " if lang == "ro" else "Currency set: ") + currency
+        keyboard = [[InlineKeyboardButton(back, callback_data="help_settings")]]
+        await query.edit_message_text(msg_cur, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    # ── Stat/Sector refreshes (from /stats and /sector commands) ──────────────
+    elif data == "stats_full":
+        fg = global_data = prices = None
+        for attempt in range(3):
+            if attempt > 0:
+                await asyncio.sleep(2)
+            fg          = get_fear_greed_stats()
+            await asyncio.sleep(0.5)
+            global_data = get_global_market()
+            await asyncio.sleep(0.5)
+            prices      = get_btc_eth_prices()
+            if fg and global_data and prices:
+                break
         if not fg or not global_data or not prices:
-            logger.error("auto_stats_job: nu s-au putut obtine datele")
+            await query.edit_message_text(t(uid, "no_data"))
             return
-        text     = format_stats(fg, global_data, prices)
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
-        await post_to_topic(context.bot, TOPIC_DATE, text, keyboard)
-        logger.info("auto_stats_job: trimis cu succes")
-    except Exception as e:
-        logger.error(f"auto_stats_job error: {e}")
+        text = format_stats_full(fg, global_data, prices)
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats_full")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def auto_trending_job(context: ContextTypes.DEFAULT_TYPE):
-    """Trimite trending automat în TOPIC_PIATA la 00:05 și 12:05."""
-    if not TOPIC_PIATA:
-        return
-    try:
+    elif data == "trending":
+        if "trending" in _cache:
+            del _cache["trending"]
         coins = get_trending_coins()
         if not coins:
-            logger.error("auto_trending_job: nu s-au putut obtine datele")
+            await query.edit_message_text(t(uid, "no_data"))
             return
-        lines = ["*🔥 Trending pe CoinGecko*\n"]
+        lines = [("Trending pe CoinGecko" if lang == "ro" else "Trending on CoinGecko") + "\n"]
         for item in coins[:7]:
-            c    = item["item"]
-            rank = c.get("market_cap_rank", "?")
-            chg  = c.get("change_24h", 0)
-            sign = "+" if chg >= 0 else ""
-            lines.append(f"• {c['name']} ({c['symbol']})  Rank #{rank}  {'🟢' if chg>=0 else '🔴'} {sign}{chg:.1f}%")
+            c         = item["item"]
+            rank      = c.get("market_cap_rank", "?")
+            chg       = c.get("change_24h", 0)
+            chg_emoji = "🟢" if chg >= 0 else "🔴"
+            sign      = "+" if chg >= 0 else ""
+            lines.append("• " + c["name"] + " (" + c["symbol"] + ")  Rank #" + str(rank) + "  " + chg_emoji + " " + sign + "{:.1f}%".format(chg))
         keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
-        await post_to_topic(context.bot, TOPIC_PIATA, "\n".join(lines), keyboard)
-        logger.info("auto_trending_job: trimis cu succes")
-    except Exception as e:
-        logger.error(f"auto_trending_job error: {e}")
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def auto_stiri_job(context: ContextTypes.DEFAULT_TYPE):
-    """Trimite știri automat în TOPIC_STIRI la 6h (dacă CRYPTOPANIC_TOKEN setat)."""
-    if not TOPIC_STIRI:
+    elif data.startswith("sector_cb:"):
+        key = data.split(":", 1)[1]
+        if key not in SECTORS:
+            await query.answer("Invalid sector.")
+            return
+        category_id, label = SECTORS[key]
+        coins = get_sector_coins(category_id)
+        if not coins:
+            await query.edit_message_text(t(uid, "no_data"))
+            return
+        lines = [label + " - Top " + str(len(coins)) + "\n"]
+        for c in coins:
+            chg       = c["change_24h"]
+            chg_emoji = "🟢" if chg >= 0 else "🔴"
+            sign      = "+" if chg >= 0 else ""
+            lines.append(c["symbol"] + " #" + str(c["rank"]) + "  " + fmt_price(c["price"]) + "  " + chg_emoji + " " + sign + "{:.1f}%".format(chg))
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="sector_cb:" + key)]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def check_technical_alerts(context):
+    fg = get_fear_greed(fresh=True)
+    if fg:
+        logger.info("Fear & Greed check: " + str(fg["value"]))
+    for uid, user in list(user_data.items()):
+        alerts = user.get("alerts", {})
+
+        # Fear & Greed alert - o singura data
+        fear_threshold = alerts.get("fear")
+        if fg and fear_threshold is not None:
+            already_sent = user.get("_fear_alert_sent", False)
+            if fg["value"] <= fear_threshold and not already_sent:
+                try:
+                    await context.bot.send_message(
+                        chat_id=uid,
+                        text=(
+                            "Fear & Greed Alert!\n\n"
+                            "Fear & Greed: " + str(fg["value"]) + "/100 - " + fg["label"] + "\n"
+                            "Pragul tau: sub " + str(fear_threshold)
+                        )
+                    )
+                    user["_fear_alert_sent"] = True
+                    save_data()
+                except Exception as e:
+                    logger.error("Fear alert error: " + str(e))
+            elif fg["value"] > fear_threshold and already_sent:
+                user["_fear_alert_sent"] = False
+                save_data()
+
+        # EMA crossover alerts
+        for alert_key, info in list(alerts.get("ema", {}).items()):
+            slug      = info["slug"]
+            period    = info["period"]
+            timeframe = info["timeframe"]
+            symbol    = info["symbol"]
+            old_pos   = info.get("position", "above")
+            ema       = await asyncio.to_thread(get_ema, slug, period, timeframe)
+            price     = await asyncio.to_thread(get_current_price_simple, slug)
+            await asyncio.sleep(0.3)
+            if ema is None or price is None:
+                continue
+            new_pos      = "above" if price > ema else "below"
+            already_sent = info.get("alert_sent", False)
+            if new_pos != old_pos and not already_sent:
+                direction = "CROSSED ABOVE" if new_pos == "above" else "CROSSED BELOW"
+                emoji     = "🟢" if new_pos == "above" else "🔴"
+                try:
+                    await context.bot.send_message(
+                        chat_id=uid,
+                        text=(
+                            emoji + " EMA Crossover Alert - " + symbol + "\n\n"
+                            + symbol + " a " + direction + " EMA" + str(period) + " DAILY\n"
+                            + "Pret: " + fmt_price(price) + "\n"
+                            + "EMA" + str(period) + ": " + fmt_price(ema)
+                        )
+                    )
+                    user["alerts"]["ema"][alert_key]["position"]   = new_pos
+                    user["alerts"]["ema"][alert_key]["alert_sent"] = True
+                    save_data()
+                except Exception as e:
+                    logger.error("EMA alert error: " + str(e))
+            elif new_pos == old_pos and already_sent:
+                user["alerts"]["ema"][alert_key]["alert_sent"] = False
+                save_data()
+
+async def check_daily_reports(context):
+    now_ro       = datetime.datetime.now(pytz.timezone("Europe/Bucharest"))
+    current_time = now_ro.strftime("%H:%M")
+    for uid, user in list(user_data.items()):
+        if not user.get("report_enabled", True):
+            continue
+        if current_time == user.get("report_time", "08:00"):
+            try:
+                text = await generate_report(uid)
+                keyboard = [[InlineKeyboardButton("Refresh", callback_data="report")]]
+                await context.bot.send_message(chat_id=uid, text=text,
+                                               reply_markup=InlineKeyboardMarkup(keyboard))
+            except Exception as e:
+                logger.error("Daily report error for " + str(uid) + ": " + str(e))
+
+
+async def handle_force_reply(update, context):
+    uid   = update.effective_user.id
+    state = _user_state.get(uid)
+    if not state:
         return
-    news = get_crypto_news(5)
-    if not news:
-        logger.info("auto_stiri_job: CRYPTOPANIC_TOKEN neconfigurat sau nicio știre")
-        return
-    now   = datetime.datetime.now(TZ_RO).strftime("%d.%m.%Y %H:%M")
-    lines = [f"*📰 Știri Crypto — {now}*\n"]
-    for n in news:
-        lines.append(f"• [{n['title']}]({n['url']})")
-    await post_to_topic(context.bot, TOPIC_STIRI, "\n".join(lines))
+    text = update.message.text.strip()
+    user = get_user(uid)
+    del _user_state[uid]
+
+    if state == "wl_add":
+        symbol = text.upper()
+        if symbol not in user["watchlist"]:
+            user["watchlist"].append(symbol)
+            save_data()
+
+    elif state == "wl_remove":
+        symbol = text.upper()
+        if symbol in user["watchlist"]:
+            user["watchlist"].remove(symbol)
+            save_data()
+
+    elif state.startswith("pf_add"):
+        # state = "pf_add:BTC" (from list) or "pf_add" (legacy)
+        parts = text.split()
+        if ":" in state:
+            symbol    = state.split(":", 1)[1]
+            amount    = float(parts[0]) if len(parts) > 0 else 0
+            buy_price = float(parts[1]) if len(parts) > 1 else 0
+        else:
+            symbol    = parts[0].upper() if len(parts) > 0 else ""
+            amount    = float(parts[1]) if len(parts) > 1 else 0
+            buy_price = float(parts[2]) if len(parts) > 2 else 0
+        if symbol:
+            user["portfolio"][symbol] = {
+                "slug": resolve_slug(symbol), "amount": amount, "buy_price": buy_price,
+            }
+            save_data()
+
+    elif state == "pf_remove":
+        symbol = text.upper()
+        if symbol in user["portfolio"]:
+            del user["portfolio"][symbol]
+            save_data()
 
 # ─── MAIN ──────────────────────────────────────────────────────────────────────
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("chatid",      cmd_chatid))
-    app.add_handler(CommandHandler("start",       cmd_start))
-    app.add_handler(CommandHandler("help",        cmd_help))
-    app.add_handler(CommandHandler("price",       cmd_price))
-    app.add_handler(CommandHandler("bubbles",     cmd_bubbles))
-    app.add_handler(CommandHandler("top",         cmd_top))
-    app.add_handler(CommandHandler("stats",       cmd_stats))
-
-    app.add_handler(CommandHandler("lang",        cmd_lang))
-    app.add_handler(CommandHandler("test",        cmd_test))
-    app.add_handler(CommandHandler("alert",       cmd_alert))
-    app.add_handler(CommandHandler("myalerts",    cmd_myalerts))
-    app.add_handler(CommandHandler("removealert", cmd_removealert))
-    app.add_handler(CommandHandler("portfolio",   cmd_portfolio))
-    app.add_handler(CommandHandler("watchlist",   cmd_watchlist))
+    app.add_handler(CommandHandler("start",        cmd_start))
+    app.add_handler(CommandHandler("help",         cmd_help))
+    app.add_handler(CommandHandler("chatid",       cmd_chatid))
+    app.add_handler(CommandHandler("portfolio",    cmd_portfolio))
+    app.add_handler(CommandHandler("pnl",          cmd_pnl))
+    app.add_handler(CommandHandler("watchlist",    cmd_watchlist))
+    app.add_handler(CommandHandler("trending",     cmd_trending))
+    app.add_handler(CommandHandler("stats",        cmd_stats))
+    app.add_handler(CommandHandler("sector",       cmd_sector))
+    app.add_handler(CommandHandler("alert_ema",    cmd_alert_ema))
+    app.add_handler(CommandHandler("alert_fear",   cmd_alert_fear))
+    app.add_handler(CommandHandler("alerts",       cmd_alerts))
+    app.add_handler(CommandHandler("report",       cmd_report))
+    app.add_handler(CommandHandler("set_report",   cmd_set_report))
+    app.add_handler(CommandHandler("set_lang",     cmd_set_lang))
+    app.add_handler(CommandHandler("set_currency", cmd_set_currency))
     app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_force_reply))
 
-    app.job_queue.run_repeating(check_alerts,      interval=CHECK_ALERTS_INTERVAL, first=10)
-    app.job_queue.run_repeating(auto_stiri_job,    interval=6 * 3600,              first=60)
-    app.job_queue.run_daily(auto_stats_job,    time=datetime.time(12, 0,  tzinfo=TZ_RO))
-    app.job_queue.run_daily(auto_stats_job,    time=datetime.time(0,  0,  tzinfo=TZ_RO))
-    app.job_queue.run_daily(auto_trending_job, time=datetime.time(12, 5,  tzinfo=TZ_RO))
-    app.job_queue.run_daily(auto_trending_job, time=datetime.time(0,  5,  tzinfo=TZ_RO))
+    app.job_queue.run_repeating(check_technical_alerts, interval=CHECK_INTERVAL, first=60)
+    app.job_queue.run_repeating(check_daily_reports,    interval=60,             first=30)
 
-    print("🤖 CryptoBot rulează cu suport Forum Topics.")
-    print(f"  GROUP_CHAT_ID  : {GROUP_CHAT_ID   or 'neconfigurat'}")
-    print(f"  TOPIC_COMENZI  : {TOPIC_COMENZI   or 'neconfigurat'}")
-    print(f"  TOPIC_PIATA    : {TOPIC_PIATA      or 'neconfigurat'}")
-    print(f"  TOPIC_STIRI    : {TOPIC_STIRI      or 'neconfigurat'}")
-    print(f"  TOPIC_DATE     : {TOPIC_DATE       or 'neconfigurat'}")
-    print(f"  TOPIC_PREDICTII: {TOPIC_PREDICTII  or 'neconfigurat'}")
-    print(f"  CRYPTOPANIC    : {'configurat' if CRYPTOPANIC_TOKEN else 'neconfigurat (stiri dezactivate)'}")
-    print(f"  JSONBIN        : {'activ (' + JSONBIN_BIN + ')' if JSONBIN_BIN else 'neconfigurat (alerte nu persista)'}")
+    print("CryptoPersonal Bot running...")
+    print("JSONBIN_API_KEY set:", bool(JSONBIN_API_KEY))
+    print("JSONBIN_BIN_ID set:", bool(JSONBIN_BIN_ID))
     app.run_polling(allowed_updates=Update.ALL_TYPES)
-
 
 if __name__ == "__main__":
     main()
