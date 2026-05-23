@@ -79,7 +79,7 @@ user_lang: dict[int, str] = {}  # populat după load_data()
 TEXTS: dict[str, dict] = {
     "ro": {
         "topic_redirect":     "⚠️ Comenzile se trimit în topicul *Comenzi bot*.",
-        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio — Portofoliul tău\n\n/watchlist — Watchlist-ul tău\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n💰 *Piață* — trending 12h\n📁 *Știri* — știri crypto\n💻 *Date & Analize* — stats 00:00/12:00\n💡 *Predicții* — alerte de preț\n",
+        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio `[normal|risk]` — Portofoliu\n\n/watchlist — Watchlist-ul tău\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n💰 *Piață* — trending 12h\n📁 *Știri* — știri crypto\n💻 *Date & Analize* — stats 00:00/12:00\n💡 *Predicții* — alerte de preț\n",
         "price_loading":      "⏳ Se încarcă datele...",
         "price_not_found":    "❌ *{coin}* nu a fost găsit.\nÎncearcă: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Folosire: `/price BTC`",
@@ -120,12 +120,17 @@ TEXTS: dict[str, dict] = {
         "fng_greed":          "⚠️ Lăcomie crescută → fii precaut, nu urmări FOMO",
         "fng_extreme_greed":  "🚨 Euforie extremă → risc ridicat de corecție",
         "loading":            "⏳ Se încarcă...",
-        "portfolio_empty":    "📁 Portofoliul tău este gol.\n\n*Comenzi disponibile:*\n`/portfolio add <coin> <cantitate> [preț]` — adaugă\n`/portfolio remove <coin>` — șterge",
+        "portfolio_empty":    "📁 Portofoliul *{ptype}* este gol.\n\n*Comenzi disponibile:*\n`/portfolio {ptype} add BTC 0.5 45000` — adaugă\n`/portfolio {ptype} remove BTC` — șterge",
         "portfolio_added":    "✅ Adăugat: *{symbol}* \xd7{amount} la {price}",
         "portfolio_removed":  "🗑 Șters din portofoliu: *{symbol}*",
         "portfolio_not_found":"❌ *{symbol}* nu este în portofoliu.",
-        "portfolio_usage":    "Folosire:\n`/portfolio` — vezi portofoliu\n`/portfolio add BTC 0.5 45000` — adaugă\n`/portfolio remove BTC` — șterge",
+        "portfolio_usage":    "Comenzi:\n`/portfolio normal` — portofoliu normal\n`/portfolio risk` — portofoliu risc\n`/portfolio normal add BTC 0.5 45000` — adaugă\n`/portfolio risk add PEPE 1000000 0.0001` — adaugă\n`/portfolio normal remove BTC` — șterge",
         "portfolio_title":    "📁 *Portofoliu*",
+        "portfolio_both_title":   "📁 *Portofolii*",
+        "portfolio_normal_label": "💼 Normal",
+        "portfolio_risk_label":   "🎲 Risc",
+        "portfolio_type_invalid": "❌ Tip invalid. Folosește `normal` sau `risk`.",
+        "portfolio_both_empty":   "📁 Ambele portofolii sunt goale.\n\n`/portfolio normal add BTC 0.5 45000` — adaugă în Normal\n`/portfolio risk add PEPE 1000000 0.0001` — adaugă în Risc",
         "watchlist_empty":    "👁 Watchlist-ul tău este gol.\n\n*Comenzi disponibile:*\n`/watchlist add <coin>` — adaugă\n`/watchlist remove <coin>` — șterge",
         "watchlist_added":    "✅ *{symbol}* adăugat în watchlist.",
         "watchlist_removed":  "🗑 *{symbol}* șters din watchlist.",
@@ -136,7 +141,7 @@ TEXTS: dict[str, dict] = {
     },
     "en": {
         "topic_redirect":     "⚠️ Commands must be sent in the *Commands* topic.",
-        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/portfolio — Your portfolio\n\n/watchlist — Your watchlist\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n🏪 *Market* — auto trending 12h\n🗒️ *News* — crypto news\n🖥️ *Data & Analysis* — auto stats 00:00/12:00\n💡 *Predictions* — price alerts\n",
+        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/portfolio `[normal|risk]` — Portfolio\n\n/watchlist — Your watchlist\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n🏪 *Market* — auto trending 12h\n🗒️ *News* — crypto news\n🖥️ *Data & Analysis* — auto stats 00:00/12:00\n💡 *Predictions* — price alerts\n",
         "price_loading":      "⏳ Loading data...",
         "price_not_found":    "❌ *{coin}* not found.\nTry: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Usage: `/price BTC`",
@@ -177,12 +182,17 @@ TEXTS: dict[str, dict] = {
         "fng_greed":          "⚠️ Greed increasing → be cautious, don't chase FOMO",
         "fng_extreme_greed":  "🚨 Extreme euphoria → high risk of correction",
         "loading":            "⏳ Loading...",
-        "portfolio_empty":    "📁 Your portfolio is empty.\n\n*Available commands:*\n`/portfolio add <coin> <amount> [price]` — add\n`/portfolio remove <coin>` — remove",
+        "portfolio_empty":    "📁 *{ptype}* portfolio is empty.\n\n*Available commands:*\n`/portfolio {ptype} add BTC 0.5 45000` — add\n`/portfolio {ptype} remove BTC` — remove",
         "portfolio_added":    "✅ Added: *{symbol}* \xd7{amount} at {price}",
         "portfolio_removed":  "🗑 Removed from portfolio: *{symbol}*",
         "portfolio_not_found":"❌ *{symbol}* is not in your portfolio.",
-        "portfolio_usage":    "Usage:\n`/portfolio` — view portfolio\n`/portfolio add BTC 0.5 45000` — add\n`/portfolio remove BTC` — remove",
+        "portfolio_usage":    "Commands:\n`/portfolio normal` — normal portfolio\n`/portfolio risk` — risk portfolio\n`/portfolio normal add BTC 0.5 45000` — add\n`/portfolio risk add PEPE 1000000 0.0001` — add\n`/portfolio normal remove BTC` — remove",
         "portfolio_title":    "📁 *Portfolio*",
+        "portfolio_both_title":   "📁 *Portfolios*",
+        "portfolio_normal_label": "💼 Normal",
+        "portfolio_risk_label":   "🎲 Risk",
+        "portfolio_type_invalid": "❌ Invalid type. Use `normal` or `risk`.",
+        "portfolio_both_empty":   "📁 Both portfolios are empty.\n\n`/portfolio normal add BTC 0.5 45000` — add to Normal\n`/portfolio risk add PEPE 1000000 0.0001` — add to Risk",
         "watchlist_empty":    "👁 Your watchlist is empty.\n\n*Available commands:*\n`/watchlist add <coin>` — add\n`/watchlist remove <coin>` — remove",
         "watchlist_added":    "✅ *{symbol}* added to watchlist.",
         "watchlist_removed":  "🗑 *{symbol}* removed from watchlist.",
@@ -222,6 +232,12 @@ def _build_payload() -> dict:
         payload["__watchlists__"] = {str(k): v for k, v in user_watchlists.items()}
     return payload
 
+def _migrate_portfolio(raw: dict) -> dict:
+    """Convertește portofoliu din formatul vechi (flat) la cel nou (normal/risk)."""
+    if not raw or set(raw.keys()).issubset({"normal", "risk"}):
+        return {"normal": raw.get("normal", {}), "risk": raw.get("risk", {})}
+    return {"normal": raw, "risk": {}}
+
 def load_data() -> tuple[dict, dict, dict, dict]:
     """Încarcă alertele, limbile, portofoliile și watchlisturile."""
     raw = {}
@@ -247,7 +263,7 @@ def load_data() -> tuple[dict, dict, dict, dict]:
     watchlists_raw = raw.pop("__watchlists__", {})
     alerts_out     = {int(k): v for k, v in raw.items()}
     lang_out       = {int(k): v for k, v in lang_raw.items()}
-    portfolios_out = {int(k): v for k, v in portfolios_raw.items()}
+    portfolios_out = {int(k): _migrate_portfolio(v) for k, v in portfolios_raw.items()}
     watchlists_out = {int(k): v for k, v in watchlists_raw.items()}
     return alerts_out, lang_out, portfolios_out, watchlists_out
 
@@ -986,71 +1002,123 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid  = update.effective_user.id
     await _delete_cmd(update)
     args = context.args
-    portfolio = user_portfolios.setdefault(uid, {})
 
-    if args and args[0].lower() == "add":
-        if len(args) < 3:
+    # Asigură structura nouă
+    if uid not in user_portfolios:
+        user_portfolios[uid] = {"normal": {}, "risk": {}}
+    elif not isinstance(user_portfolios[uid].get("normal"), dict):
+        user_portfolios[uid] = _migrate_portfolio(user_portfolios[uid])
+
+    PTYPES = {"normal", "risk"}
+    ptype  = args[0].lower() if args and args[0].lower() in PTYPES else None
+
+    # /portfolio normal add BTC 0.5 45000
+    # /portfolio risk add PEPE 1000000 0.0001
+    if ptype and len(args) >= 2 and args[1].lower() == "add":
+        if len(args) < 4:
             await _dm_or_reply(update, context, t(uid, "portfolio_usage"), parse_mode="Markdown")
             return
-        symbol = args[1].upper()
+        symbol = args[2].upper()
         try:
-            amount    = float(args[2])
-            buy_price = float(args[3]) if len(args) > 3 else 0.0
+            amount    = float(args[3])
+            buy_price = float(args[4]) if len(args) > 4 else 0.0
         except ValueError:
             await _dm_or_reply(update, context, "❌ Număr invalid.", parse_mode="Markdown")
             return
         slug = resolve_slug(symbol)
-        portfolio[symbol] = {"slug": slug, "amount": amount, "buy_price": buy_price}
+        user_portfolios[uid][ptype][symbol] = {"slug": slug, "amount": amount, "buy_price": buy_price}
         save_alerts()
+        ptype_label = t(uid, "portfolio_risk_label") if ptype == "risk" else t(uid, "portfolio_normal_label")
         await _dm_or_reply(update, context,
-            t(uid, "portfolio_added", symbol=symbol, amount=amount, price=fmt_price(buy_price)),
+            t(uid, "portfolio_added", symbol=symbol, amount=amount, price=fmt_price(buy_price)) + f"\n_{ptype_label}_",
             parse_mode="Markdown")
         return
 
-    if args and args[0].lower() == "remove":
-        if len(args) < 2:
+    # /portfolio normal remove BTC
+    # /portfolio risk remove PEPE
+    if ptype and len(args) >= 2 and args[1].lower() == "remove":
+        if len(args) < 3:
             await _dm_or_reply(update, context, t(uid, "portfolio_usage"), parse_mode="Markdown")
             return
-        symbol = args[1].upper()
-        if symbol not in portfolio:
+        symbol = args[1].upper() if len(args) == 2 else args[2].upper()
+        if symbol not in user_portfolios[uid][ptype]:
             await _dm_or_reply(update, context, t(uid, "portfolio_not_found", symbol=symbol), parse_mode="Markdown")
             return
-        del portfolio[symbol]
+        del user_portfolios[uid][ptype][symbol]
         save_alerts()
         await _dm_or_reply(update, context, t(uid, "portfolio_removed", symbol=symbol), parse_mode="Markdown")
         return
 
-    if not portfolio:
-        await _dm_or_reply(update, context, t(uid, "portfolio_empty"), parse_mode="Markdown")
-        return
-
-    msg = await _dm_or_reply(update, context, t(uid, "loading"))
-    pf  = await asyncio.to_thread(calculate_portfolio, portfolio)
-    if not pf or not pf["coins"]:
+    # /portfolio normal  sau  /portfolio risk  — view portofoliu specific
+    if ptype:
+        portfolio = user_portfolios[uid][ptype]
+        if not portfolio:
+            await _dm_or_reply(update, context,
+                t(uid, "portfolio_empty", ptype=ptype), parse_mode="Markdown")
+            return
+        msg = await _dm_or_reply(update, context, t(uid, "loading"))
+        pf  = await asyncio.to_thread(calculate_portfolio, portfolio)
+        if not pf or not pf["coins"]:
+            if msg:
+                await msg.edit_text("❌ Nu s-au putut obține prețurile.")
+            return
+        ptype_label = t(uid, "portfolio_risk_label") if ptype == "risk" else t(uid, "portfolio_normal_label")
+        other_type  = "risk" if ptype == "normal" else "normal"
+        other_label = t(uid, "portfolio_risk_label") if other_type == "risk" else t(uid, "portfolio_normal_label")
+        lines = [f"{t(uid, 'portfolio_title')} — {ptype_label}", "━" * 20, ""]
+        for c in pf["coins"]:
+            alloc = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
+            lines.append(
+                f"*{c['symbol']}* — {fmt_price(c['current_price'])}\n"
+                f"  Cantitate: `{c['amount']}`  |  Valoare: `{fmt_price(c['current_value'])}`\n"
+                f"  Cumpărat: `{fmt_price(c['buy_price'])}`  |  24h: {fmt_pct(c['change_24h'])}\n"
+                f"  P&L: `{fmt_price(c['pnl'])}` ({fmt_pct(c['pnl_pct'])})  |  Alocare: `{alloc:.1f}%`\n"
+            )
+        pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
+        lines += [
+            "━" * 20,
+            f"💼 *Total valoare:* `{fmt_price(pf['total_value'])}`",
+            f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
+            f"{pnl_emoji} *P&L total:*     `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})",
+        ]
+        keyboard = [[
+            InlineKeyboardButton("🔄 Refresh", callback_data=f"portfolio:{ptype}"),
+            InlineKeyboardButton(other_label,  callback_data=f"portfolio:{other_type}"),
+        ]]
         if msg:
-            await msg.edit_text("❌ Nu s-au putut obține prețurile.")
+            await msg.edit_text("\n".join(lines), parse_mode="Markdown",
+                                reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
-    lines = [t(uid, "portfolio_title"), "━" * 20, ""]
-    for c in pf["coins"]:
-        alloc = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
+    # /portfolio — overview ambele
+    normal_data = user_portfolios[uid].get("normal", {})
+    risk_data   = user_portfolios[uid].get("risk",   {})
+    if not normal_data and not risk_data:
+        await _dm_or_reply(update, context, t(uid, "portfolio_both_empty"), parse_mode="Markdown")
+        return
+    msg = await _dm_or_reply(update, context, t(uid, "loading"))
+    normal_pf = await asyncio.to_thread(calculate_portfolio, normal_data) if normal_data else None
+    risk_pf   = await asyncio.to_thread(calculate_portfolio, risk_data)   if risk_data   else None
+    coin_word = "monede" if gl(uid) == "ro" else "coins"
+    empty_word = "gol" if gl(uid) == "ro" else "empty"
+    lines = [t(uid, "portfolio_both_title"), "━" * 20, ""]
+    for pf, label in [(normal_pf, t(uid, "portfolio_normal_label")), (risk_pf, t(uid, "portfolio_risk_label"))]:
+        if not pf:
+            lines.append(f"{label}: _({empty_word})_\n")
+            continue
+        pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
         lines.append(
-            f"*{c['symbol']}* — {fmt_price(c['current_price'])}\n"
-            f"  Cantitate: `{c['amount']}`  |  Valoare: `{fmt_price(c['current_value'])}`\n"
-            f"  Cumpărat: `{fmt_price(c['buy_price'])}`  |  24h: {fmt_pct(c['change_24h'])}\n"
-            f"  P&L: `{fmt_price(c['pnl'])}` ({fmt_pct(c['pnl_pct'])})  |  Alocare: `{alloc:.1f}%`\n"
+            f"*{label}* ({len(pf['coins'])} {coin_word})\n"
+            f"  Total: `{fmt_price(pf['total_value'])}`  |  "
+            f"P&L: {pnl_emoji} `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})\n"
         )
-    pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
-    lines += [
-        "━" * 20,
-        f"💼 *Total valoare:* `{fmt_price(pf['total_value'])}`",
-        f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
-        f"{pnl_emoji} *P&L total:*     `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})",
-        "",
-        t(uid, "portfolio_usage"),
-    ]
+    keyboard = [[
+        InlineKeyboardButton(t(uid, "portfolio_normal_label"), callback_data="portfolio:normal"),
+        InlineKeyboardButton(t(uid, "portfolio_risk_label"),   callback_data="portfolio:risk"),
+    ]]
     if msg:
-        await msg.edit_text("\n".join(lines), parse_mode="Markdown")
+        await msg.edit_text("\n".join(lines), parse_mode="Markdown",
+                            reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1181,34 +1249,74 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "portfolio":
+    elif data == "portfolio" or data.startswith("portfolio:"):
         uid = query.from_user.id
-        portfolio = user_portfolios.get(uid, {})
-        if not portfolio:
-            await query.edit_message_text(t(uid, "portfolio_empty"), parse_mode="Markdown")
-            return
-        await query.edit_message_text(t(uid, "loading"))
-        pf = await asyncio.to_thread(calculate_portfolio, portfolio)
-        if not pf or not pf["coins"]:
-            await query.edit_message_text("❌ Nu s-au putut obține prețurile.")
-            return
-        lines = [t(uid, "portfolio_title"), "━" * 20, ""]
-        for c in pf["coins"]:
-            alloc = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
-            lines.append(
-                f"*{c['symbol']}* — {fmt_price(c['current_price'])}\n"
-                f"  Cantitate: `{c['amount']}`  |  Valoare: `{fmt_price(c['current_value'])}`\n"
-                f"  Cumpărat: `{fmt_price(c['buy_price'])}`  |  24h: {fmt_pct(c['change_24h'])}\n"
-                f"  P&L: `{fmt_price(c['pnl'])}` ({fmt_pct(c['pnl_pct'])})  |  Alocare: `{alloc:.1f}%`\n"
-            )
-        pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
-        lines += [
-            "━" * 20,
-            f"💼 *Total valoare:* `{fmt_price(pf['total_value'])}`",
-            f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
-            f"{pnl_emoji} *P&L total:*     `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})",
-        ]
-        await query.edit_message_text("\n".join(lines), parse_mode="Markdown")
+        if uid not in user_portfolios:
+            user_portfolios[uid] = {"normal": {}, "risk": {}}
+        elif not isinstance(user_portfolios[uid].get("normal"), dict):
+            user_portfolios[uid] = _migrate_portfolio(user_portfolios[uid])
+
+        ptype = data.split(":", 1)[1] if ":" in data else None
+
+        if ptype in ("normal", "risk"):
+            portfolio = user_portfolios[uid].get(ptype, {})
+            if not portfolio:
+                await query.edit_message_text(t(uid, "portfolio_empty", ptype=ptype), parse_mode="Markdown")
+                return
+            await query.edit_message_text(t(uid, "loading"))
+            pf = await asyncio.to_thread(calculate_portfolio, portfolio)
+            if not pf or not pf["coins"]:
+                await query.edit_message_text("❌ Nu s-au putut obține prețurile.")
+                return
+            ptype_label = t(uid, "portfolio_risk_label") if ptype == "risk" else t(uid, "portfolio_normal_label")
+            other_type  = "risk" if ptype == "normal" else "normal"
+            other_label = t(uid, "portfolio_risk_label") if other_type == "risk" else t(uid, "portfolio_normal_label")
+            lines = [f"{t(uid, 'portfolio_title')} — {ptype_label}", "━" * 20, ""]
+            for c in pf["coins"]:
+                alloc = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
+                lines.append(
+                    f"*{c['symbol']}* — {fmt_price(c['current_price'])}\n"
+                    f"  Cantitate: `{c['amount']}`  |  Valoare: `{fmt_price(c['current_value'])}`\n"
+                    f"  Cumpărat: `{fmt_price(c['buy_price'])}`  |  24h: {fmt_pct(c['change_24h'])}\n"
+                    f"  P&L: `{fmt_price(c['pnl'])}` ({fmt_pct(c['pnl_pct'])})  |  Alocare: `{alloc:.1f}%`\n"
+                )
+            pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
+            lines += [
+                "━" * 20,
+                f"💼 *Total valoare:* `{fmt_price(pf['total_value'])}`",
+                f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
+                f"{pnl_emoji} *P&L total:*     `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})",
+            ]
+            keyboard = [[
+                InlineKeyboardButton("🔄 Refresh", callback_data=f"portfolio:{ptype}"),
+                InlineKeyboardButton(other_label,  callback_data=f"portfolio:{other_type}"),
+            ]]
+            await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
+                                          reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            normal_data = user_portfolios[uid].get("normal", {})
+            risk_data   = user_portfolios[uid].get("risk",   {})
+            normal_pf = await asyncio.to_thread(calculate_portfolio, normal_data) if normal_data else None
+            risk_pf   = await asyncio.to_thread(calculate_portfolio, risk_data)   if risk_data   else None
+            coin_word  = "monede" if gl(uid) == "ro" else "coins"
+            empty_word = "gol" if gl(uid) == "ro" else "empty"
+            lines = [t(uid, "portfolio_both_title"), "━" * 20, ""]
+            for pf, label in [(normal_pf, t(uid, "portfolio_normal_label")), (risk_pf, t(uid, "portfolio_risk_label"))]:
+                if not pf:
+                    lines.append(f"{label}: _({empty_word})_\n")
+                    continue
+                pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
+                lines.append(
+                    f"*{label}* ({len(pf['coins'])} {coin_word})\n"
+                    f"  Total: `{fmt_price(pf['total_value'])}`  |  "
+                    f"P&L: {pnl_emoji} `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})\n"
+                )
+            keyboard = [[
+                InlineKeyboardButton(t(uid, "portfolio_normal_label"), callback_data="portfolio:normal"),
+                InlineKeyboardButton(t(uid, "portfolio_risk_label"),   callback_data="portfolio:risk"),
+            ]]
+            await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
+                                          reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "help":
         uid = query.from_user.id
