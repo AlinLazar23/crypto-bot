@@ -80,7 +80,7 @@ user_lang: dict[int, str] = {}  # populat după load_data()
 TEXTS: dict[str, dict] = {
     "ro": {
         "topic_redirect":     "⚠️ Comenzile se trimit în topicul *Comenzi bot*.",
-        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/top — Top 10 după market cap\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio — Portofoliul tău\n/portfolio add `<coin> <cantitate> [preț]`\n/portfolio remove `<coin>`\n\n/watchlist — Watchlist-ul tău\n/watchlist add `<coin>`\n/watchlist remove `<coin>`\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n📊 *Piață* — trending 12h\n📰 *Știri* — știri crypto\n📈 *Date & Analize* — stats 00:00/12:00\n🔔 *Predicții* — alerte de preț\n",
+        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/top — Top 10 după market cap\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio — Portofoliul tău\n\n/watchlist — Watchlist-ul tău\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n📊 *Piață* — trending 12h\n📰 *Știri* — știri crypto\n📈 *Date & Analize* — stats 00:00/12:00\n🔔 *Predicții* — alerte de preț\n",
         "price_loading":      "⏳ Se încarcă datele...",
         "price_not_found":    "❌ *{coin}* nu a fost găsit.\nÎncearcă: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Folosire: `/price BTC`",
@@ -124,23 +124,23 @@ TEXTS: dict[str, dict] = {
         "fng_greed":          "⚠️ Lăcomie crescută → fii precaut, nu urmări FOMO",
         "fng_extreme_greed":  "🚨 Euforie extremă → risc ridicat de corecție",
         "loading":            "⏳ Se încarcă...",
-        "portfolio_empty":    "📁 Portofoliul tău este gol.\nFolosește: `/portfolio add BTC 0.5 45000`",
+        "portfolio_empty":    "📁 Portofoliul tău este gol.\n\n*Comenzi disponibile:*\n`/portfolio add <coin> <cantitate> [preț]` — adaugă\n`/portfolio remove <coin>` — șterge",
         "portfolio_added":    "✅ Adăugat: *{symbol}* \xd7{amount} la {price}",
         "portfolio_removed":  "🗑 Șters din portofoliu: *{symbol}*",
         "portfolio_not_found":"❌ *{symbol}* nu este în portofoliu.",
         "portfolio_usage":    "Folosire:\n`/portfolio` — vezi portofoliu\n`/portfolio add BTC 0.5 45000` — adaugă\n`/portfolio remove BTC` — șterge",
         "portfolio_title":    "📁 *Portofoliu*",
-        "watchlist_empty":    "👁 Watchlist-ul tău este gol.\nFolosește: `/watchlist add BTC`",
+        "watchlist_empty":    "👁 Watchlist-ul tău este gol.\n\n*Comenzi disponibile:*\n`/watchlist add <coin>` — adaugă\n`/watchlist remove <coin>` — șterge",
         "watchlist_added":    "✅ *{symbol}* adăugat în watchlist.",
         "watchlist_removed":  "🗑 *{symbol}* șters din watchlist.",
         "watchlist_already":  "⚠️ *{symbol}* este deja în watchlist.",
         "watchlist_not_found":"❌ *{symbol}* nu este în watchlist.",
-        "watchlist_usage":    "Folosire:\n`/watchlist` — vezi watchlist\n`/watchlist add BTC` — adaugă\n`/watchlist remove BTC` — șterge",
+        "watchlist_usage":    "`/watchlist add <coin>` — adaugă\n`/watchlist remove <coin>` — șterge",
         "watchlist_title":    "👁 *Watchlist*",
     },
     "en": {
         "topic_redirect":     "⚠️ Commands must be sent in the *Commands* topic.",
-        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/top — Top 10 by market cap\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/portfolio — Your portfolio\n/portfolio add `<coin> <amount> [price]`\n/portfolio remove `<coin>`\n\n/watchlist — Your watchlist\n/watchlist add `<coin>`\n/watchlist remove `<coin>`\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n📊 *Market* — auto trending 12h\n📰 *News* — crypto news\n📈 *Data & Analysis* — auto stats 00:00/12:00\n🔔 *Predictions* — price alerts\n",
+        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/top — Top 10 by market cap\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/portfolio — Your portfolio\n\n/watchlist — Your watchlist\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n📊 *Market* — auto trending 12h\n📰 *News* — crypto news\n📈 *Data & Analysis* — auto stats 00:00/12:00\n🔔 *Predictions* — price alerts\n",
         "price_loading":      "⏳ Loading data...",
         "price_not_found":    "❌ *{coin}* not found.\nTry: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Usage: `/price BTC`",
@@ -184,18 +184,18 @@ TEXTS: dict[str, dict] = {
         "fng_greed":          "⚠️ Greed increasing → be cautious, don't chase FOMO",
         "fng_extreme_greed":  "🚨 Extreme euphoria → high risk of correction",
         "loading":            "⏳ Loading...",
-        "portfolio_empty":    "📁 Your portfolio is empty.\nUse: `/portfolio add BTC 0.5 45000`",
+        "portfolio_empty":    "📁 Your portfolio is empty.\n\n*Available commands:*\n`/portfolio add <coin> <amount> [price]` — add\n`/portfolio remove <coin>` — remove",
         "portfolio_added":    "✅ Added: *{symbol}* \xd7{amount} at {price}",
         "portfolio_removed":  "🗑 Removed from portfolio: *{symbol}*",
         "portfolio_not_found":"❌ *{symbol}* is not in your portfolio.",
         "portfolio_usage":    "Usage:\n`/portfolio` — view portfolio\n`/portfolio add BTC 0.5 45000` — add\n`/portfolio remove BTC` — remove",
         "portfolio_title":    "📁 *Portfolio*",
-        "watchlist_empty":    "👁 Your watchlist is empty.\nUse: `/watchlist add BTC`",
+        "watchlist_empty":    "👁 Your watchlist is empty.\n\n*Available commands:*\n`/watchlist add <coin>` — add\n`/watchlist remove <coin>` — remove",
         "watchlist_added":    "✅ *{symbol}* added to watchlist.",
         "watchlist_removed":  "🗑 *{symbol}* removed from watchlist.",
         "watchlist_already":  "⚠️ *{symbol}* is already in watchlist.",
         "watchlist_not_found":"❌ *{symbol}* is not in your watchlist.",
-        "watchlist_usage":    "Usage:\n`/watchlist` — view watchlist\n`/watchlist add BTC` — add\n`/watchlist remove BTC` — remove",
+        "watchlist_usage":    "`/watchlist add <coin>` — add\n`/watchlist remove <coin>` — remove",
         "watchlist_title":    "👁 *Watchlist*",
     },
 }
@@ -1098,6 +1098,8 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💼 *Total valoare:* `{fmt_price(pf['total_value'])}`",
         f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
         f"{pnl_emoji} *P&L total:*     `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})",
+        "",
+        t(uid, "portfolio_usage"),
     ]
     if msg:
         await msg.edit_text("\n".join(lines), parse_mode="Markdown")
@@ -1152,6 +1154,7 @@ async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"• *{symbol}*: `{fmt_price(price)}`  {fmt_pct(chg)}")
         else:
             lines.append(f"• *{symbol}*: N/A")
+    lines += ["", t(uid, "watchlist_usage")]
 
     if msg:
         await msg.edit_text("\n".join(lines), parse_mode="Markdown")
