@@ -29,7 +29,6 @@ Roluri topicuri:
 
 Commands:
     /price BTC       - Preț live
-    /top             - Top 10 după market cap
     /stats           - Statistici piață + Market Score
     /alert BTC 70000 - Alertă de preț
     /myalerts        - Alertele tale
@@ -80,13 +79,10 @@ user_lang: dict[int, str] = {}  # populat după load_data()
 TEXTS: dict[str, dict] = {
     "ro": {
         "topic_redirect":     "⚠️ Comenzile se trimit în topicul *Comenzi bot*.",
-        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/top — Top 10 după market cap\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio — Portofoliul tău\n\n/watchlist — Watchlist-ul tău\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n📊 *Piață* — trending 12h\n📰 *Știri* — știri crypto\n📈 *Date & Analize* — stats 00:00/12:00\n🔔 *Predicții* — alerte de preț\n",
+        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio — Portofoliul tău\n\n/watchlist — Watchlist-ul tău\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n🏪 *Piață* — trending 12h\n🗒️ *Știri* — știri crypto\n🖥️ *Date & Analize* — stats 00:00/12:00\n💡 *Predicții* — alerte de preț\n",
         "price_loading":      "⏳ Se încarcă datele...",
         "price_not_found":    "❌ *{coin}* nu a fost găsit.\nÎncearcă: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Folosire: `/price BTC`",
-        "top_loading":        "⏳ Se încarcă top 10...",
-        "top_title":          "*🏆 Top 10 după Market Cap*\n",
-        "top_no_data":        "❌ Nu s-au putut obține datele.",
         "trending_loading":   "⏳ Se încarcă trending...",
         "trending_title":     "*🔥 Trending pe CoinGecko*\n",
         "stats_loading":      "⏳ Se calculează statisticile pieței...",
@@ -136,17 +132,14 @@ TEXTS: dict[str, dict] = {
         "watchlist_already":  "⚠️ *{symbol}* este deja în watchlist.",
         "watchlist_not_found":"❌ *{symbol}* nu este în watchlist.",
         "watchlist_usage":    "`/watchlist add <coin>` — adaugă\n`/watchlist remove <coin>` — șterge",
-        "watchlist_title":    "👁 *Watchlist*",
+        "watchlist_title":    "👁 *Watchlist (24h)*",
     },
     "en": {
         "topic_redirect":     "⚠️ Commands must be sent in the *Commands* topic.",
-        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/top — Top 10 by market cap\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/portfolio — Your portfolio\n\n/watchlist — Your watchlist\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n📊 *Market* — auto trending 12h\n📰 *News* — crypto news\n📈 *Data & Analysis* — auto stats 00:00/12:00\n🔔 *Predictions* — price alerts\n",
+        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/portfolio — Your portfolio\n\n/watchlist — Your watchlist\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n🏪 *Market* — auto trending 12h\n🗒️ *News* — crypto news\n🖥️ *Data & Analysis* — auto stats 00:00/12:00\n💡 *Predictions* — price alerts\n",
         "price_loading":      "⏳ Loading data...",
         "price_not_found":    "❌ *{coin}* not found.\nTry: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Usage: `/price BTC`",
-        "top_loading":        "⏳ Loading top 10...",
-        "top_title":          "*🏆 Top 10 by Market Cap*\n",
-        "top_no_data":        "❌ Could not fetch data.",
         "trending_loading":   "⏳ Loading trending...",
         "trending_title":     "*🔥 Trending on CoinGecko*\n",
         "stats_loading":      "⏳ Calculating market statistics...",
@@ -196,7 +189,7 @@ TEXTS: dict[str, dict] = {
         "watchlist_already":  "⚠️ *{symbol}* is already in watchlist.",
         "watchlist_not_found":"❌ *{symbol}* is not in your watchlist.",
         "watchlist_usage":    "`/watchlist add <coin>` — add\n`/watchlist remove <coin>` — remove",
-        "watchlist_title":    "👁 *Watchlist*",
+        "watchlist_title":    "👁 *Watchlist (24h)*",
     },
 }
 
@@ -520,33 +513,6 @@ def get_coin_data(slug: str) -> dict | None:
         except Exception as e:
             logger.error(f"get_coin_data error ({slug}): {e}")
     return None
-
-def get_top_coins(limit: int = 10) -> list[dict]:
-    cache_key = f"top:{limit}"
-    cached = cache_get(cache_key)
-    if cached is not None:
-        return cached
-    for attempt in range(3):
-        if attempt > 0:
-            time.sleep(2)
-        try:
-            r = requests.get(
-                f"{COINGECKO_BASE}/coins/markets",
-                params={"vs_currency": "usd", "order": "market_cap_desc",
-                        "per_page": limit, "page": 1, "sparkline": "false"},
-                timeout=10,
-            )
-            if r.status_code == 200:
-                result = [{"symbol": c["symbol"].upper(), "name": c["name"],
-                         "slug": c["id"], "price": c["current_price"],
-                         "change_24h": c.get("price_change_percentage_24h") or 0}
-                        for c in r.json()]
-                cache_set(cache_key, result)
-                return result
-            logger.warning(f"get_top_coins HTTP {r.status_code} (attempt {attempt + 1})")
-        except Exception as e:
-            logger.error(f"get_top_coins error: {e}")
-    return []
 
 def get_trending_coins() -> list[dict]:
     try:
@@ -924,24 +890,6 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"price:{slug}")]]
     await msg.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
-    msg   = await update.message.reply_text(t(uid, "top_loading"))
-    coins = await asyncio.to_thread(get_top_coins, 10)
-    if not coins:
-        await msg.edit_text(t(uid, "top_no_data"))
-        return
-    lines = [t(uid, "top_title")]
-    for i, c in enumerate(coins, 1):
-        chg   = c.get("change_24h") or 0
-        arrow = "▲" if chg >= 0 else "▼"
-        lines.append(f"{i}. *{c['symbol']}* — {fmt_price(c['price'])}  {'🟢' if chg>=0 else '🔴'} {arrow}{abs(chg):.1f}%")
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="top")]]
-    await msg.edit_text("\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if not is_in_correct_topic(update):
@@ -1196,23 +1144,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data  = query.data
 
-    if data == "top":
-        coins = await asyncio.to_thread(get_top_coins, 10)
-        if not coins:
-            await query.edit_message_text("❌ Nu s-au putut obține datele.")
-            return
-        lines = ["*🏆 Top 10 după Market Cap*\n"]
-        for i, c in enumerate(coins, 1):
-            chg   = c.get("change_24h") or 0
-            arrow = "▲" if chg >= 0 else "▼"
-            lines.append(
-                f"{i}. *{c['symbol']}* — {fmt_price(c['price'])}  "
-                f"{'🟢' if chg>=0 else '🔴'} {arrow}{abs(chg):.1f}%")
-        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="top")]]
-        await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif data == "trending":
+    if data == "trending":
         uid   = query.from_user.id
         coins = await asyncio.to_thread(get_trending_coins)
         if not coins:
@@ -1421,7 +1353,6 @@ def main():
     app.add_handler(CommandHandler("chatid",      cmd_chatid))
     app.add_handler(CommandHandler("help",        cmd_help))
     app.add_handler(CommandHandler("price",       cmd_price))
-    app.add_handler(CommandHandler("top",         cmd_top))
     app.add_handler(CommandHandler("stats",       cmd_stats))
 
     app.add_handler(CommandHandler("lang",        cmd_lang))
