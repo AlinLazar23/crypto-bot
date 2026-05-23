@@ -28,10 +28,8 @@ Roluri topicuri:
     Predicții     ← alerte de preț automate
 
 Commands:
-    /start           - Bun venit
     /price BTC       - Preț live
     /top             - Top 10 după market cap
-    /bubbles         - Lista CryptoBubbles (1h/24h/7d/30d/1y)
     /stats           - Statistici piață + Market Score
     /alert BTC 70000 - Alertă de preț
     /myalerts        - Alertele tale
@@ -82,8 +80,7 @@ user_lang: dict[int, str] = {}  # populat după load_data()
 TEXTS: dict[str, dict] = {
     "ro": {
         "topic_redirect":     "⚠️ Comenzile se trimit în topicul *Comenzi bot*.",
-        "start_msg":          "👋 *Bun venit la CryptoBot!*\n\nDate live din CoinGecko.\n\nÎncearcă:\n• /price BTC\n• /bubbles 24h\n• /top\n• /alert BTC 70000\n",
-        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/bubbles — CryptoBubbles 24h\n/bubbles `1h|7d|30d|1y`\n\n/top — Top 10 după market cap\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio — Portofoliul tău\n/portfolio add `<coin> <cantitate> [preț]`\n/portfolio remove `<coin>`\n\n/watchlist — Watchlist-ul tău\n/watchlist add `<coin>`\n/watchlist remove `<coin>`\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n📊 *Piață* — trending 12h\n📰 *Știri* — știri crypto\n📈 *Date & Analize* — stats 00:00/12:00\n🔔 *Predicții* — alerte de preț\n",
+        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/top — Top 10 după market cap\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio — Portofoliul tău\n/portfolio add `<coin> <cantitate> [preț]`\n/portfolio remove `<coin>`\n\n/watchlist — Watchlist-ul tău\n/watchlist add `<coin>`\n/watchlist remove `<coin>`\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n📊 *Piață* — trending 12h\n📰 *Știri* — știri crypto\n📈 *Date & Analize* — stats 00:00/12:00\n🔔 *Predicții* — alerte de preț\n",
         "price_loading":      "⏳ Se încarcă datele...",
         "price_not_found":    "❌ *{coin}* nu a fost găsit.\nÎncearcă: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Folosire: `/price BTC`",
@@ -92,12 +89,6 @@ TEXTS: dict[str, dict] = {
         "top_no_data":        "❌ Nu s-au putut obține datele.",
         "trending_loading":   "⏳ Se încarcă trending...",
         "trending_title":     "*🔥 Trending pe CoinGecko*\n",
-        "bubbles_loading":    "⏳ Se încarcă CryptoBubbles ({period})...",
-        "bubbles_usage":      "Folosire: `/bubbles 24h`\nOpțiuni: `1h`, `24h`, `7d`, `30d`, `1y`",
-        "bubbles_no_data":    "❌ Nu s-au putut obține datele.",
-        "bubbles_header":     "🫧 *CryptoBubbles — {label}*\n_{n} monede sortate după performanță_\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
-        "bubbles_cont":       "🫧 *CryptoBubbles — {label}* _(continuare)_\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
-        "period_labels":      {"1h": "1 Oră", "24h": "24 Ore", "7d": "7 Zile", "30d": "30 Zile", "1y": "1 An"},
         "stats_loading":      "⏳ Se calculează statisticile pieței...",
         "stats_no_data":      "❌ Nu s-au putut obține datele. Încearcă din nou în 1 minut.",
         "stats_sentiment":    "🧠 *SENTIMENT PIAȚĂ*",
@@ -149,8 +140,7 @@ TEXTS: dict[str, dict] = {
     },
     "en": {
         "topic_redirect":     "⚠️ Commands must be sent in the *Commands* topic.",
-        "start_msg":          "👋 *Welcome to CryptoBot!*\n\nLive data from CoinGecko.\n\nTry:\n• /price BTC\n• /bubbles 24h\n• /top\n• /alert BTC 70000\n",
-        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/bubbles — CryptoBubbles 24h\n/bubbles `1h|7d|30d|1y`\n\n/top — Top 10 by market cap\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/portfolio — Your portfolio\n/portfolio add `<coin> <amount> [price]`\n/portfolio remove `<coin>`\n\n/watchlist — Your watchlist\n/watchlist add `<coin>`\n/watchlist remove `<coin>`\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n📊 *Market* — auto trending 12h\n📰 *News* — crypto news\n📈 *Data & Analysis* — auto stats 00:00/12:00\n🔔 *Predictions* — price alerts\n",
+        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/top — Top 10 by market cap\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/portfolio — Your portfolio\n/portfolio add `<coin> <amount> [price]`\n/portfolio remove `<coin>`\n\n/watchlist — Your watchlist\n/watchlist add `<coin>`\n/watchlist remove `<coin>`\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n📊 *Market* — auto trending 12h\n📰 *News* — crypto news\n📈 *Data & Analysis* — auto stats 00:00/12:00\n🔔 *Predictions* — price alerts\n",
         "price_loading":      "⏳ Loading data...",
         "price_not_found":    "❌ *{coin}* not found.\nTry: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Usage: `/price BTC`",
@@ -159,12 +149,6 @@ TEXTS: dict[str, dict] = {
         "top_no_data":        "❌ Could not fetch data.",
         "trending_loading":   "⏳ Loading trending...",
         "trending_title":     "*🔥 Trending on CoinGecko*\n",
-        "bubbles_loading":    "⏳ Loading CryptoBubbles ({period})...",
-        "bubbles_usage":      "Usage: `/bubbles 24h`\nOptions: `1h`, `24h`, `7d`, `30d`, `1y`",
-        "bubbles_no_data":    "❌ Could not fetch data.",
-        "bubbles_header":     "🫧 *CryptoBubbles — {label}*\n_{n} coins sorted by performance_\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
-        "bubbles_cont":       "🫧 *CryptoBubbles — {label}* _(continued)_\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
-        "period_labels":      {"1h": "1 Hour", "24h": "24 Hours", "7d": "7 Days", "30d": "30 Days", "1y": "1 Year"},
         "stats_loading":      "⏳ Calculating market statistics...",
         "stats_no_data":      "❌ Could not fetch data. Try again in 1 minute.",
         "stats_sentiment":    "🧠 *MARKET SENTIMENT*",
@@ -412,38 +396,6 @@ async def post_to_topic(bot, topic_id: int, text: str, keyboard=None):
     except Exception as e:
         logger.error(f"post_to_topic error (topic={topic_id}): {e}")
 
-# ─── MONEDE CRYPTOBUBBLES ──────────────────────────────────────────────────────
-BUBBLES_COINS = [
-    ("bitcoin",               "BTC"),
-    ("ethereum",              "ETH"),
-    ("tether",                "USDT"),
-    ("usd-coin",              "USDC"),
-    ("dogecoin",              "DOGE"),
-    ("hyperliquid",           "HYPE"),
-    ("cardano",               "ADA"),
-    ("chainlink",             "LINK"),
-    ("avalanche-2",           "AVAX"),
-    ("sui",                   "SUI"),
-    ("internet-computer",     "ICP"),
-    ("polkadot",              "DOT"),
-    ("astar",                 "ASTR"),
-    ("cosmos",                "ATOM"),
-    ("algorand",              "ALGO"),
-    ("arbitrum",              "ARB"),
-    ("filecoin",              "FIL"),
-    ("vechain",               "VET"),
-    ("virtuals-protocol",     "VIRTUAL"),
-    ("sei-network",           "SEI"),
-    ("injective-protocol",    "INJ"),
-    ("celestia",              "TIA"),
-    ("the-graph",             "GRT"),
-    ("elrond-erd-2",          "EGLD"),
-    ("binancecoin",           "BNB"),
-    ("ripple",                "XRP"),
-    ("fetch-ai",              "FET"),
-    ("gala",                  "GALA"),
-]
-
 # ─── FORMATARE ─────────────────────────────────────────────────────────────────
 
 def fmt_price(value) -> str:
@@ -614,51 +566,6 @@ def get_trending_coins() -> list[dict]:
         logger.error(f"get_trending_coins error: {e}")
     return []
 
-def get_bubbles_data() -> list[dict]:
-    """Fetch toate perioadele deodată, cachează sub o singură cheie."""
-    cached = cache_get("bubbles_all")
-    if cached is not None:
-        return cached
-    slugs = [slug for slug, _ in BUBBLES_COINS]
-    try:
-        r = requests.get(
-            f"{COINGECKO_BASE}/coins/markets",
-            params={
-                "vs_currency": "usd",
-                "ids": ",".join(slugs),
-                "order": "market_cap_desc",
-                "per_page": 100,
-                "page": 1,
-                "sparkline": "false",
-                "price_change_percentage": "1h,24h,7d,30d,1y",
-            },
-            timeout=15,
-        )
-        if r.status_code == 200:
-            result = []
-            for c in r.json():
-                result.append({
-                    "slug":       c["id"],
-                    "symbol":     c["symbol"].upper(),
-                    "name":       c["name"],
-                    "rank":       c.get("market_cap_rank", 999),
-                    "price":      c.get("current_price", 0),
-                    "change_1h":  c.get("price_change_percentage_1h_in_currency") or 0,
-                    "change_24h": c.get("price_change_percentage_24h_in_currency")
-                                  or c.get("price_change_percentage_24h") or 0,
-                    "change_7d":  c.get("price_change_percentage_7d_in_currency") or 0,
-                    "change_30d": c.get("price_change_percentage_30d_in_currency") or 0,
-                    "change_1y":  c.get("price_change_percentage_1y_in_currency") or 0,
-                    "market_cap": c.get("market_cap", 0),
-                    "volume_24h": c.get("total_volume", 0),
-                })
-            cache_set("bubbles_all", result)
-            return result
-        logger.error(f"get_bubbles_data HTTP {r.status_code}: {r.text[:200]}")
-    except Exception as e:
-        logger.error(f"get_bubbles_data error: {e}")
-    return []
-
 def get_crypto_news(limit: int = 5) -> list[dict]:
     if not CRYPTOPANIC_TOKEN:
         return []
@@ -674,39 +581,6 @@ def get_crypto_news(limit: int = 5) -> list[dict]:
         logger.error(f"get_crypto_news error: {e}")
     return []
 
-
-# ─── FORMAT BUBBLES ────────────────────────────────────────────────────────────
-
-def format_bubbles(coins: list[dict], period: str, uid: int = 0) -> list[str]:
-    period_key = {
-        "1h": "change_1h", "24h": "change_24h",
-        "7d": "change_7d", "30d": "change_30d", "1y": "change_1y",
-    }.get(period, "change_24h")
-
-    sorted_coins = sorted(coins, key=lambda c: c.get(period_key, 0), reverse=True)
-    label        = t(uid, "period_labels").get(period, period)
-    header       = t(uid, "bubbles_header", label=label, n=len(coins))
-    cont         = t(uid, "bubbles_cont",   label=label)
-
-    lines = []
-    for c in sorted_coins:
-        chg      = c.get(period_key, 0)
-        chg_str  = f"+{chg:.1f}%" if chg >= 0 else f"{chg:.1f}%"
-        rank     = c["rank"]
-        rank_str = f"0{rank}" if isinstance(rank, int) and rank < 10 else str(rank)
-        lines.append(f"{c['symbol']} #{rank_str}  {fmt_price(c['price'])}  {'🟢' if chg>=0 else '🔴'} {chg_str}\n")
-
-    pages   = []
-    current = header
-    for line in lines:
-        if len(current) + len(line) > 3800:
-            pages.append(current)
-            current = cont
-        current += line
-    if current.strip():
-        pages.append(current)
-
-    return pages
 
 # ─── STATS DATA SOURCES ────────────────────────────────────────────────────────
 
@@ -968,7 +842,7 @@ async def _dm_or_reply(update: Update, context, text: str, reply_markup=None, pa
         name     = update.effective_user.first_name or "tu"
         btn      = "Primeste raspuns in privat" if lang == "ro" else "Get reply in private"
         notif_kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton(btn, url=f"https://t.me/{bot_info.username}?start=help")
+            InlineKeyboardButton(btn, url=f"https://t.me/{bot_info.username}")
         ]])
         chat_id = update.effective_chat.id
         msg = await context.bot.send_message(
@@ -997,22 +871,6 @@ async def cmd_chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🧵 *Topic Thread ID:* `{thread_id}`" if thread_id else "🧵 *Topic Thread ID:* N/A",
     ]
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
-
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
-    keyboard = [
-        [InlineKeyboardButton("📊 Top 10",      callback_data="top"),
-         InlineKeyboardButton("📊 Stats",       callback_data="stats")],
-        [InlineKeyboardButton("🫧 Bubbles 24h", callback_data="bubbles:24h"),
-         InlineKeyboardButton("🔥 Trending",    callback_data="trending")],
-        [InlineKeyboardButton("🌐 Limba/Lang",  callback_data="lang"),
-         InlineKeyboardButton("❓ Help",         callback_data="help")],
-    ]
-    await update.message.reply_text(t(uid, "start_msg"), parse_mode="Markdown",
-                                    reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -1065,33 +923,6 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"price:{slug}")]]
     await msg.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def cmd_bubbles(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
-    valid_periods = ["1h", "24h", "7d", "30d", "1y"]
-    period = context.args[0].lower() if context.args else "24h"
-    if period not in valid_periods:
-        await update.message.reply_text(t(uid, "bubbles_usage"), parse_mode="Markdown")
-        return
-    msg   = await update.message.reply_text(t(uid, "bubbles_loading", period=period), parse_mode="Markdown")
-    coins = await asyncio.to_thread(get_bubbles_data)
-    if not coins:
-        await msg.edit_text(t(uid, "bubbles_no_data"))
-        return
-    pages    = format_bubbles(coins, period, uid)
-    keyboard = [[
-        InlineKeyboardButton("1h",  callback_data="bubbles:1h"),
-        InlineKeyboardButton("24h", callback_data="bubbles:24h"),
-        InlineKeyboardButton("7d",  callback_data="bubbles:7d"),
-        InlineKeyboardButton("30d", callback_data="bubbles:30d"),
-        InlineKeyboardButton("1y",  callback_data="bubbles:1y"),
-    ]]
-    await msg.edit_text(pages[0], parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-    for page in pages[1:]:
-        await update.message.reply_text(page, parse_mode="Markdown")
 
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -1395,26 +1226,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data.startswith("bubbles:"):
-        period = data.split(":", 1)[1]
-        await query.edit_message_text(f"⏳ Se încarcă CryptoBubbles ({period})...", parse_mode="Markdown")
-        coins = await asyncio.to_thread(get_bubbles_data)
-        if not coins:
-            await query.edit_message_text("❌ Nu s-au putut obține datele.")
-            return
-        pages    = format_bubbles(coins, period)
-        keyboard = [[
-            InlineKeyboardButton("1h",  callback_data="bubbles:1h"),
-            InlineKeyboardButton("24h", callback_data="bubbles:24h"),
-            InlineKeyboardButton("7d",  callback_data="bubbles:7d"),
-            InlineKeyboardButton("30d", callback_data="bubbles:30d"),
-            InlineKeyboardButton("1y",  callback_data="bubbles:1y"),
-        ]]
-        await query.edit_message_text(pages[0], parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
-        for page in pages[1:]:
-            await query.message.reply_text(page, parse_mode="Markdown")
-
     elif data == "stats":
         fg = global_data = prices = None
         for attempt in range(3):
@@ -1434,6 +1245,35 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
         await query.edit_message_text(text, parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data == "portfolio":
+        uid = query.from_user.id
+        portfolio = user_portfolios.get(uid, {})
+        if not portfolio:
+            await query.edit_message_text(t(uid, "portfolio_empty"), parse_mode="Markdown")
+            return
+        await query.edit_message_text(t(uid, "loading"))
+        pf = await asyncio.to_thread(calculate_portfolio, portfolio)
+        if not pf or not pf["coins"]:
+            await query.edit_message_text("❌ Nu s-au putut obține prețurile.")
+            return
+        lines = [t(uid, "portfolio_title"), "━" * 20, ""]
+        for c in pf["coins"]:
+            alloc = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
+            lines.append(
+                f"*{c['symbol']}* — {fmt_price(c['current_price'])}\n"
+                f"  Cantitate: `{c['amount']}`  |  Valoare: `{fmt_price(c['current_value'])}`\n"
+                f"  Cumpărat: `{fmt_price(c['buy_price'])}`  |  24h: {fmt_pct(c['change_24h'])}\n"
+                f"  P&L: `{fmt_price(c['pnl'])}` ({fmt_pct(c['pnl_pct'])})  |  Alocare: `{alloc:.1f}%`\n"
+            )
+        pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
+        lines += [
+            "━" * 20,
+            f"💼 *Total valoare:* `{fmt_price(pf['total_value'])}`",
+            f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
+            f"{pnl_emoji} *P&L total:*     `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})",
+        ]
+        await query.edit_message_text("\n".join(lines), parse_mode="Markdown")
 
     elif data == "help":
         uid = query.from_user.id
@@ -1576,10 +1416,8 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("chatid",      cmd_chatid))
-    app.add_handler(CommandHandler("start",       cmd_start))
     app.add_handler(CommandHandler("help",        cmd_help))
     app.add_handler(CommandHandler("price",       cmd_price))
-    app.add_handler(CommandHandler("bubbles",     cmd_bubbles))
     app.add_handler(CommandHandler("top",         cmd_top))
     app.add_handler(CommandHandler("stats",       cmd_stats))
 
