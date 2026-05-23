@@ -1081,13 +1081,8 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
             f"{pnl_emoji} *P&L total:*     `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})",
         ]
-        keyboard = [[
-            InlineKeyboardButton("🔄 Refresh", callback_data=f"portfolio:{ptype}"),
-            InlineKeyboardButton(other_label,  callback_data=f"portfolio:{other_type}"),
-        ]]
         if msg:
-            await msg.edit_text("\n".join(lines), parse_mode="Markdown",
-                                reply_markup=InlineKeyboardMarkup(keyboard))
+            await msg.edit_text("\n".join(lines), parse_mode="Markdown")
         return
 
     # /portfolio — overview ambele
@@ -1112,13 +1107,8 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"  Total: `{fmt_price(pf['total_value'])}`  |  "
             f"P&L: {pnl_emoji} `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})\n"
         )
-    keyboard = [[
-        InlineKeyboardButton(t(uid, "portfolio_normal_label"), callback_data="portfolio:normal"),
-        InlineKeyboardButton(t(uid, "portfolio_risk_label"),   callback_data="portfolio:risk"),
-    ]]
     if msg:
-        await msg.edit_text("\n".join(lines), parse_mode="Markdown",
-                            reply_markup=InlineKeyboardMarkup(keyboard))
+        await msg.edit_text("\n".join(lines), parse_mode="Markdown")
 
 
 async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1287,12 +1277,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
                 f"{pnl_emoji} *P&L total:*     `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})",
             ]
-            keyboard = [[
-                InlineKeyboardButton("🔄 Refresh", callback_data=f"portfolio:{ptype}"),
-                InlineKeyboardButton(other_label,  callback_data=f"portfolio:{other_type}"),
-            ]]
-            await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
-                                          reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text("\n".join(lines), parse_mode="Markdown")
         else:
             normal_data = user_portfolios[uid].get("normal", {})
             risk_data   = user_portfolios[uid].get("risk",   {})
@@ -1311,12 +1296,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"  Total: `{fmt_price(pf['total_value'])}`  |  "
                     f"P&L: {pnl_emoji} `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})\n"
                 )
-            keyboard = [[
-                InlineKeyboardButton(t(uid, "portfolio_normal_label"), callback_data="portfolio:normal"),
-                InlineKeyboardButton(t(uid, "portfolio_risk_label"),   callback_data="portfolio:risk"),
-            ]]
-            await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
-                                          reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text("\n".join(lines), parse_mode="Markdown")
 
     elif data == "help":
         uid = query.from_user.id
