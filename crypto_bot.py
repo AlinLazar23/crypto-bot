@@ -79,7 +79,7 @@ user_lang: dict[int, str] = {}  # populat după load_data()
 TEXTS: dict[str, dict] = {
     "ro": {
         "topic_redirect":     "⚠️ Comenzile se trimit în topicul *Comenzi bot*.",
-        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio — Portofoliul tău\n\n/watchlist — Watchlist-ul tău\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n🏪 *Piață* — trending 12h\n🗒️ *Știri* — știri crypto\n🖥️ *Date & Analize* — stats 00:00/12:00\n💡 *Predicții* — alerte de preț\n",
+        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio — Portofoliul tău\n\n/watchlist — Watchlist-ul tău\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n💰 *Piață* — trending 12h\n📁 *Știri* — știri crypto\n💻 *Date & Analize* — stats 00:00/12:00\n💡 *Predicții* — alerte de preț\n",
         "price_loading":      "⏳ Se încarcă datele...",
         "price_not_found":    "❌ *{coin}* nu a fost găsit.\nÎncearcă: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Folosire: `/price BTC`",
