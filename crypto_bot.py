@@ -1007,7 +1007,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📊 Top 10",      callback_data="top"),
          InlineKeyboardButton("📊 Stats",       callback_data="stats")],
         [InlineKeyboardButton("🫧 Bubbles 24h", callback_data="bubbles:24h"),
-         InlineKeyboardButton("📊 Stats",       callback_data="stats")],
+         InlineKeyboardButton("🔥 Trending",    callback_data="trending")],
         [InlineKeyboardButton("🌐 Limba/Lang",  callback_data="lang"),
          InlineKeyboardButton("❓ Help",         callback_data="help")],
     ]
@@ -1040,8 +1040,8 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     query = " ".join(context.args)
     msg   = await update.message.reply_text(t(uid, "price_loading"))
-    slug  = resolve_slug(query)
-    data  = get_coin_data(slug) if slug else None
+    slug  = await asyncio.to_thread(resolve_slug, query)
+    data  = await asyncio.to_thread(get_coin_data, slug) if slug else None
     if not data:
         await msg.edit_text(t(uid, "price_not_found", coin=query.upper()), parse_mode="Markdown")
         return
@@ -1077,7 +1077,7 @@ async def cmd_bubbles(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t(uid, "bubbles_usage"), parse_mode="Markdown")
         return
     msg   = await update.message.reply_text(t(uid, "bubbles_loading", period=period), parse_mode="Markdown")
-    coins = get_bubbles_data()
+    coins = await asyncio.to_thread(get_bubbles_data)
     if not coins:
         await msg.edit_text(t(uid, "bubbles_no_data"))
         return
@@ -1099,7 +1099,7 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
         return
     msg   = await update.message.reply_text(t(uid, "top_loading"))
-    coins = get_top_coins(10)
+    coins = await asyncio.to_thread(get_top_coins, 10)
     if not coins:
         await msg.edit_text(t(uid, "top_no_data"))
         return
@@ -1121,11 +1121,11 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for attempt in range(3):
         if attempt > 0:
             await asyncio.sleep(2)
-        fg          = get_fear_greed()
-        time.sleep(0.5)
-        global_data = get_global_market()
-        time.sleep(0.5)
-        prices      = get_btc_eth_prices()
+        fg          = await asyncio.to_thread(get_fear_greed)
+        await asyncio.sleep(0.5)
+        global_data = await asyncio.to_thread(get_global_market)
+        await asyncio.sleep(0.5)
+        prices      = await asyncio.to_thread(get_btc_eth_prices)
         if fg and global_data and prices:
             break
     if not fg or not global_data or not prices:
@@ -1148,8 +1148,8 @@ async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _dm_or_reply(update, context, t(uid, "alert_invalid"), parse_mode="Markdown")
         return
     msg  = await _dm_or_reply(update, context, t(uid, "alert_loading", coin=query.upper()), parse_mode="Markdown")
-    slug = resolve_slug(query)
-    data = get_coin_data(slug) if slug else None
+    slug = await asyncio.to_thread(resolve_slug, query)
+    data = await asyncio.to_thread(get_coin_data, slug) if slug else None
     if not data:
         if msg:
             await msg.edit_text(t(uid, "alert_not_found", coin=query.upper()), parse_mode="Markdown")
@@ -1309,7 +1309,7 @@ async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     msg   = await _dm_or_reply(update, context, t(uid, "loading"))
-    slugs = [resolve_slug(s) for s in watchlist]
+    slugs = list(await asyncio.gather(*[asyncio.to_thread(resolve_slug, s) for s in watchlist]))
     prices_data = await asyncio.to_thread(get_prices_batch, [s for s in slugs if s])
 
     lines = [t(uid, "watchlist_title"), "━" * 20, ""]
@@ -1363,7 +1363,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data  = query.data
 
     if data == "top":
-        coins = get_top_coins(10)
+        coins = await asyncio.to_thread(get_top_coins, 10)
         if not coins:
             await query.edit_message_text("❌ Nu s-au putut obține datele.")
             return
@@ -1378,11 +1378,27 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(keyboard))
 
+    elif data == "trending":
+        uid   = query.from_user.id
+        coins = await asyncio.to_thread(get_trending_coins)
+        if not coins:
+            await query.edit_message_text("❌ Nu s-au putut obține datele.")
+            return
+        lines = [t(uid, "trending_title")]
+        for item in coins[:7]:
+            c    = item["item"]
+            rank = c.get("market_cap_rank", "?")
+            chg  = c.get("change_24h", 0)
+            sign = "+" if chg >= 0 else ""
+            lines.append(f"• {c['name']} ({c['symbol']})  Rank #{rank}  {'🟢' if chg>=0 else '🔴'} {sign}{chg:.1f}%")
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="trending")]]
+        await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
+                                      reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("bubbles:"):
         period = data.split(":", 1)[1]
         await query.edit_message_text(f"⏳ Se încarcă CryptoBubbles ({period})...", parse_mode="Markdown")
-        coins = get_bubbles_data()
+        coins = await asyncio.to_thread(get_bubbles_data)
         if not coins:
             await query.edit_message_text("❌ Nu s-au putut obține datele.")
             return
@@ -1404,11 +1420,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for attempt in range(3):
             if attempt > 0:
                 await asyncio.sleep(2)
-            fg          = get_fear_greed()
-            time.sleep(0.5)
-            global_data = get_global_market()
-            time.sleep(0.5)
-            prices      = get_btc_eth_prices()
+            fg          = await asyncio.to_thread(get_fear_greed)
+            await asyncio.sleep(0.5)
+            global_data = await asyncio.to_thread(get_global_market)
+            await asyncio.sleep(0.5)
+            prices      = await asyncio.to_thread(get_btc_eth_prices)
             if fg and global_data and prices:
                 break
         if not fg or not global_data or not prices:
@@ -1441,7 +1457,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("price:"):
         slug = data.split(":", 1)[1]
-        info = get_coin_data(slug)
+        info = await asyncio.to_thread(get_coin_data, slug)
         if not info:
             await query.edit_message_text("❌ Nu s-au putut obține datele.")
             return
@@ -1471,7 +1487,7 @@ async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
     for uid, alerts in list(user_alerts.items()):
         to_remove = []
         for i, alert in enumerate(alerts):
-            data = get_coin_data(alert["slug"])
+            data = await asyncio.to_thread(get_coin_data, alert["slug"])
             if not data:
                 continue
             current   = data["price"]
@@ -1503,11 +1519,11 @@ async def auto_stats_job(context: ContextTypes.DEFAULT_TYPE):
     if not TOPIC_DATE:
         return
     try:
-        fg          = get_fear_greed()
-        time.sleep(0.5)
-        global_data = get_global_market()
-        time.sleep(0.5)
-        prices      = get_btc_eth_prices()
+        fg          = await asyncio.to_thread(get_fear_greed)
+        await asyncio.sleep(0.5)
+        global_data = await asyncio.to_thread(get_global_market)
+        await asyncio.sleep(0.5)
+        prices      = await asyncio.to_thread(get_btc_eth_prices)
         if not fg or not global_data or not prices:
             logger.error("auto_stats_job: nu s-au putut obtine datele")
             return
@@ -1523,7 +1539,7 @@ async def auto_trending_job(context: ContextTypes.DEFAULT_TYPE):
     if not TOPIC_PIATA:
         return
     try:
-        coins = get_trending_coins()
+        coins = await asyncio.to_thread(get_trending_coins)
         if not coins:
             logger.error("auto_trending_job: nu s-au putut obtine datele")
             return
@@ -1544,7 +1560,7 @@ async def auto_stiri_job(context: ContextTypes.DEFAULT_TYPE):
     """Trimite știri automat în TOPIC_STIRI la 6h (dacă CRYPTOPANIC_TOKEN setat)."""
     if not TOPIC_STIRI:
         return
-    news = get_crypto_news(5)
+    news = await asyncio.to_thread(get_crypto_news, 5)
     if not news:
         logger.info("auto_stiri_job: CRYPTOPANIC_TOKEN neconfigurat sau nicio știre")
         return
