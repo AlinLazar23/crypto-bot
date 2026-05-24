@@ -168,7 +168,7 @@ TEXTS: dict[str, dict] = {
         "myalerts_title":     "*Your alerts*\n",
         "myalerts_footer":    "\nUse `/removealert <number>` to delete.",
         "removealert_none":   "No alerts to delete.",
-        "removealert_usage":  "🗑 To delete an alert, type `/removealert` followed by its number — for example `/removealert 1`. You can find the number by typing `/myalerts`.",
+        "removealert_usage":  "🗑 To delete an alert, type `/removealert` followed by its number — for example `/removealert 1`",
         "removealert_done":   "🗑 Alert deleted: *{name}* @ {price}",
         "removealert_bad":    "❌ Invalid number. Use /myalerts.",
         "alert_triggered":    "🔔 *Price alert triggered!*\n\n*{name}* ({symbol}) has {verb} {price}\nYour target was: {target}",
