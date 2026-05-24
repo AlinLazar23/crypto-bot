@@ -79,7 +79,7 @@ user_lang: dict[int, str] = {}  # populat după load_data()
 TEXTS: dict[str, dict] = {
     "ro": {
         "topic_redirect":     "⚠️ Comenzile se trimit în topicul *Comenzi bot*.",
-        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/stats — Statistici piață\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio `[normal|risk]` — Portofoliu\n\n/watchlist — Watchlist-ul tău\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n💰 *Piață* — trending 12h\n📁 *Știri* — știri crypto\n💻 *Date & Analize* — stats 00:00/12:00\n💡 *Predicții* — alerte de preț\n",
+        "help_msg":           "📖 *Comenzi disponibile*\n\n/price `<coin>` — Preț live\n  ex: `/price BTC`\n\n/alert `<coin> <preț>` — Alertă de preț\n\n/myalerts — Alertele tale\n\n/removealert `<nr>` — Șterge alerta\n\n/portfolio `[normal|risk]` — Portofoliu\n\n/watchlist — Watchlist-ul tău\n\n/lang — Schimbă limba\n\n━━━━━━━━━━━━━━━━━━\n*Topicuri grup:*\n🏪 *Piață* — trending automat 12h\n🗒️ *Știri* — știri crypto\n🖥️ *Date & Analize* — stats 00:00/12:00\n💡 *Predicții* — alerte de preț\n",
         "price_loading":      "⏳ Se încarcă datele...",
         "price_not_found":    "❌ *{coin}* nu a fost găsit.\nÎncearcă: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Folosire: `/price BTC`",
@@ -99,14 +99,14 @@ TEXTS: dict[str, dict] = {
         "alert_invalid":      "❌ Preț invalid.",
         "alert_loading":      "⏳ Se caută *{coin}*...",
         "alert_not_found":    "❌ *{coin}* nu a fost găsit.",
-        "alert_set":          "✅ Alertă setată: *{name}* {arrow} {price}\n_(Preț curent: {current})_\n_Notificarea va apărea în topicul Predicții._",
+        "alert_set":          "✅ Alertă setată: *{name}* {arrow} {price}\n_(Preț curent: {current})_",
         "alert_rise":         "📈 crește până la",
         "alert_fall":         "📉 scade până la",
         "myalerts_none":      "Nu ai alerte active. Folosește `/alert` pentru a seta una.",
         "myalerts_title":     "*Alertele tale*\n",
         "myalerts_footer":    "\nFolosește `/removealert <număr>` pentru a șterge.",
         "removealert_none":   "Nu ai alerte de șters.",
-        "removealert_usage":  "Folosire: `/removealert 1`",
+        "removealert_usage":  "❓ *Cum folosești /removealert:*\n\n1. Scrie `/myalerts` pentru a vedea alertele tale numerotate\n2. Apoi `/removealert <număr>` pentru a șterge\n\nExemplu: `/removealert 1` — șterge prima alertă din listă",
         "removealert_done":   "🗑 Alertă ștearsă: *{name}* @ {price}",
         "removealert_bad":    "❌ Număr invalid. Folosește /myalerts.",
         "alert_triggered":    "🔔 *Alertă de preț activată!*\n\n*{name}* ({symbol}) a {verb} {price}\nȚinta ta era: {target}",
@@ -141,7 +141,7 @@ TEXTS: dict[str, dict] = {
     },
     "en": {
         "topic_redirect":     "⚠️ Commands must be sent in the *Commands* topic.",
-        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/stats — Market statistics\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/portfolio `[normal|risk]` — Portfolio\n\n/watchlist — Your watchlist\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n🏪 *Market* — auto trending 12h\n🗒️ *News* — crypto news\n🖥️ *Data & Analysis* — auto stats 00:00/12:00\n💡 *Predictions* — price alerts\n",
+        "help_msg":           "📖 *Available commands*\n\n/price `<coin>` — Live price\n  ex: `/price BTC`\n\n/alert `<coin> <price>` — Price alert\n\n/myalerts — Your alerts\n\n/removealert `<nr>` — Remove alert\n\n/portfolio `[normal|risk]` — Portfolio\n\n/watchlist — Your watchlist\n\n/lang — Change language\n\n━━━━━━━━━━━━━━━━━━\n*Group topics:*\n🏪 *Market* — auto trending 12h\n🗒️ *News* — crypto news\n🖥️ *Data & Analysis* — auto stats 00:00/12:00\n💡 *Predictions* — price alerts\n",
         "price_loading":      "⏳ Loading data...",
         "price_not_found":    "❌ *{coin}* not found.\nTry: `/price BTC`, `/price ETH`, `/price bitcoin`",
         "price_usage":        "Usage: `/price BTC`",
@@ -161,14 +161,14 @@ TEXTS: dict[str, dict] = {
         "alert_invalid":      "❌ Invalid price.",
         "alert_loading":      "⏳ Searching *{coin}*...",
         "alert_not_found":    "❌ *{coin}* not found.",
-        "alert_set":          "✅ Alert set: *{name}* {arrow} {price}\n_(Current price: {current})_\n_Notification will appear in the Predictions topic._",
+        "alert_set":          "✅ Alert set: *{name}* {arrow} {price}\n_(Current price: {current})_",
         "alert_rise":         "📈 rises to",
         "alert_fall":         "📉 falls to",
         "myalerts_none":      "No active alerts. Use `/alert` to set one.",
         "myalerts_title":     "*Your alerts*\n",
         "myalerts_footer":    "\nUse `/removealert <number>` to delete.",
         "removealert_none":   "No alerts to delete.",
-        "removealert_usage":  "Usage: `/removealert 1`",
+        "removealert_usage":  "❓ *How to use /removealert:*\n\n1. Type `/myalerts` to see your numbered alerts\n2. Then `/removealert <number>` to delete\n\nExample: `/removealert 1` — deletes the first alert in the list",
         "removealert_done":   "🗑 Alert deleted: *{name}* @ {price}",
         "removealert_bad":    "❌ Invalid number. Use /myalerts.",
         "alert_triggered":    "🔔 *Price alert triggered!*\n\n*{name}* ({symbol}) has {verb} {price}\nYour target was: {target}",
@@ -859,31 +859,36 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_in_correct_topic(update):
         await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
         return
-    await update.message.reply_text(t(uid, "help_msg"), parse_mode="Markdown")
+    await _delete_cmd(update)
+    await _dm_or_reply(update, context, t(uid, "help_msg"), parse_mode="Markdown")
 
 async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid      = update.effective_user.id
+    await _delete_cmd(update)
     keyboard = [[
         InlineKeyboardButton("🇷🇴 Română",  callback_data="setlang:ro"),
         InlineKeyboardButton("🇬🇧 English", callback_data="setlang:en"),
     ]]
-    await update.message.reply_text(t(uid, "lang_prompt"), parse_mode="Markdown",
-                                    reply_markup=InlineKeyboardMarkup(keyboard))
+    await _dm_or_reply(update, context, t(uid, "lang_prompt"),
+                       reply_markup=InlineKeyboardMarkup(keyboard),
+                       parse_mode="Markdown")
 
 async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if not is_in_correct_topic(update):
         await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
         return
+    await _delete_cmd(update)
     if not context.args:
-        await update.message.reply_text(t(uid, "price_usage"), parse_mode="Markdown")
+        await _dm_or_reply(update, context, t(uid, "price_usage"), parse_mode="Markdown")
         return
     query = " ".join(context.args)
-    msg   = await update.message.reply_text(t(uid, "price_loading"))
+    msg   = await _dm_or_reply(update, context, t(uid, "price_loading"))
     slug  = await asyncio.to_thread(resolve_slug, query)
     data  = await asyncio.to_thread(get_coin_data, slug) if slug else None
     if not data:
-        await msg.edit_text(t(uid, "price_not_found", coin=query.upper()), parse_mode="Markdown")
+        if msg:
+            await msg.edit_text(t(uid, "price_not_found", coin=query.upper()), parse_mode="Markdown")
         return
     lbl_price = "Price" if gl(uid) == "en" else "Preț"
     lbl_7d    = "7 days" if gl(uid) == "en" else "7 zile"
@@ -892,43 +897,21 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         f"*{data['name']}* ({data['symbol']})  •  Rank #{data['rank']}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"💰 {lbl_price}:   {fmt_price(data['price'])}\n"
-        f"📈 1h:       {fmt_change(data['change_1h'])}\n"
-        f"📈 24h:      {fmt_change(data['change_24h'])}\n"
+        f"💰 {lbl_price}: {fmt_price(data['price'])}\n"
+        f"📈 1h: {fmt_change(data['change_1h'])}\n"
+        f"📈 24h: {fmt_change(data['change_24h'])}\n"
         f"📈 {lbl_7d}: {fmt_change(data['change_7d'])}\n"
-        f"📈 {lbl_30d}:{fmt_change(data['change_30d'])}\n"
+        f"📈 {lbl_30d}: {fmt_change(data['change_30d'])}\n"
         f"─────────────────\n"
         f"📊 24h High: {fmt_price(data['high_24h'])}\n"
-        f"📊 24h Low:  {fmt_price(data['low_24h'])}\n"
-        f"🏦 Mkt Cap:  {fmt_large(data['market_cap'])}\n"
-        f"💹 {lbl_vol}:{fmt_large(data['volume_24h'])}\n"
+        f"📊 24h Low: {fmt_price(data['low_24h'])}\n"
+        f"🏦 Mkt Cap: {fmt_large(data['market_cap'])}\n"
+        f"💹 {lbl_vol}: {fmt_large(data['volume_24h'])}\n"
     )
     keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"price:{slug}")]]
-    await msg.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    if msg:
+        await msg.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if not is_in_correct_topic(update):
-        await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
-        return
-    msg = await update.message.reply_text(t(uid, "stats_loading"))
-    fg = global_data = prices = None
-    for attempt in range(3):
-        if attempt > 0:
-            await asyncio.sleep(2)
-        fg          = await asyncio.to_thread(get_fear_greed)
-        await asyncio.sleep(0.5)
-        global_data = await asyncio.to_thread(get_global_market)
-        await asyncio.sleep(0.5)
-        prices      = await asyncio.to_thread(get_btc_eth_prices)
-        if fg and global_data and prices:
-            break
-    if not fg or not global_data or not prices:
-        await msg.edit_text(t(uid, "stats_no_data"))
-        return
-    text     = format_stats(fg, global_data, prices, uid)
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
-    await msg.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -1075,11 +1058,18 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"  P&L: `{fmt_price(c['pnl'])}` ({fmt_pct(c['pnl_pct'])})  |  Alocare: `{alloc:.1f}%`\n"
             )
         pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
+        add_lbl = "adaugă" if gl(uid) == "ro" else "add"
+        rem_lbl = "șterge" if gl(uid) == "ro" else "remove"
+        cmd_lbl = "Comenzi rapide" if gl(uid) == "ro" else "Quick commands"
         lines += [
             "━" * 20,
             f"💼 *Total valoare:* `{fmt_price(pf['total_value'])}`",
             f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
             f"{pnl_emoji} *P&L total:*     `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})",
+            "",
+            f"📌 *{cmd_lbl}:*",
+            f"`/portfolio {ptype} add BTC 0.5 45000` — {add_lbl}",
+            f"`/portfolio {ptype} remove BTC` — {rem_lbl}",
         ]
         if msg:
             await msg.edit_text("\n".join(lines), parse_mode="Markdown")
@@ -1107,6 +1097,17 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"  Total: `{fmt_price(pf['total_value'])}`  |  "
             f"P&L: {pnl_emoji} `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})\n"
         )
+    add_lbl = "adaugă" if gl(uid) == "ro" else "add"
+    rem_lbl = "șterge" if gl(uid) == "ro" else "remove"
+    cmd_lbl = "Comenzi rapide" if gl(uid) == "ro" else "Quick commands"
+    lines += [
+        "━" * 20,
+        f"📌 *{cmd_lbl}:*",
+        f"`/portfolio normal add BTC 0.5 45000` — {add_lbl}",
+        f"`/portfolio normal remove BTC` — {rem_lbl}",
+        f"`/portfolio risk add PEPE 1000000 0.0001` — {add_lbl}",
+        f"`/portfolio risk remove PEPE` — {rem_lbl}",
+    ]
     if msg:
         await msg.edit_text("\n".join(lines), parse_mode="Markdown")
 
@@ -1271,11 +1272,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"  P&L: `{fmt_price(c['pnl'])}` ({fmt_pct(c['pnl_pct'])})  |  Alocare: `{alloc:.1f}%`\n"
                 )
             pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
+            add_lbl = "adaugă" if gl(uid) == "ro" else "add"
+            rem_lbl = "șterge" if gl(uid) == "ro" else "remove"
+            cmd_lbl = "Comenzi rapide" if gl(uid) == "ro" else "Quick commands"
             lines += [
                 "━" * 20,
                 f"💼 *Total valoare:* `{fmt_price(pf['total_value'])}`",
                 f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
                 f"{pnl_emoji} *P&L total:*     `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})",
+                "",
+                f"📌 *{cmd_lbl}:*",
+                f"`/portfolio {ptype} add BTC 0.5 45000` — {add_lbl}",
+                f"`/portfolio {ptype} remove BTC` — {rem_lbl}",
             ]
             await query.edit_message_text("\n".join(lines), parse_mode="Markdown")
         else:
@@ -1296,6 +1304,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"  Total: `{fmt_price(pf['total_value'])}`  |  "
                     f"P&L: {pnl_emoji} `{fmt_price(pf['total_pnl'])}` ({fmt_pct(pf['total_pnl_pct'])})\n"
                 )
+            add_lbl = "adaugă" if gl(uid) == "ro" else "add"
+            rem_lbl = "șterge" if gl(uid) == "ro" else "remove"
+            cmd_lbl = "Comenzi rapide" if gl(uid) == "ro" else "Quick commands"
+            lines += [
+                "━" * 20,
+                f"📌 *{cmd_lbl}:*",
+                f"`/portfolio normal add BTC 0.5 45000` — {add_lbl}",
+                f"`/portfolio normal remove BTC` — {rem_lbl}",
+                f"`/portfolio risk add PEPE 1000000 0.0001` — {add_lbl}",
+                f"`/portfolio risk remove PEPE` — {rem_lbl}",
+            ]
             await query.edit_message_text("\n".join(lines), parse_mode="Markdown")
 
     elif data == "help":
@@ -1327,15 +1346,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = (
             f"*{info['name']}* ({info['symbol']})  •  Rank #{info['rank']}\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"💰 Preț:      {fmt_price(info['price'])}\n"
-            f"📈 1h:        {fmt_change(info['change_1h'])}\n"
-            f"📈 24h:       {fmt_change(info['change_24h'])}\n"
-            f"📈 7 zile:    {fmt_change(info['change_7d'])}\n"
-            f"📈 30 zile:   {fmt_change(info['change_30d'])}\n"
+            f"💰 Preț: {fmt_price(info['price'])}\n"
+            f"📈 1h: {fmt_change(info['change_1h'])}\n"
+            f"📈 24h: {fmt_change(info['change_24h'])}\n"
+            f"📈 7 zile: {fmt_change(info['change_7d'])}\n"
+            f"📈 30 zile: {fmt_change(info['change_30d'])}\n"
             f"─────────────────\n"
-            f"📊 24h High:  {fmt_price(info['high_24h'])}\n"
-            f"📊 24h Low:   {fmt_price(info['low_24h'])}\n"
-            f"🏦 Mkt Cap:   {fmt_large(info['market_cap'])}\n"
+            f"📊 24h High: {fmt_price(info['high_24h'])}\n"
+            f"📊 24h Low: {fmt_price(info['low_24h'])}\n"
+            f"🏦 Mkt Cap: {fmt_large(info['market_cap'])}\n"
             f"💹 Volum 24h: {fmt_large(info['volume_24h'])}\n"
         )
         keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"price:{slug}")]]
@@ -1364,13 +1383,10 @@ async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
                      name=alert["name"], symbol=alert["symbol"],
                      verb=verb, price=fmt_price(current), target=fmt_price(target))
             try:
-                if TOPIC_PREDICTII and GROUP_CHAT_ID:
-                    await post_to_topic(context.bot, TOPIC_PREDICTII, text)
-                else:
-                    await context.bot.send_message(
-                        chat_id=uid, text=text, parse_mode="Markdown")
+                await context.bot.send_message(
+                    chat_id=uid, text=text, parse_mode="Markdown")
             except Exception as e:
-                logger.error(f"Alert send failed: {e}")
+                logger.error(f"Alert send failed for uid={uid}: {e}")
             to_remove.append(i)
         for i in reversed(to_remove):
             alerts.pop(i)
@@ -1441,8 +1457,6 @@ def main():
     app.add_handler(CommandHandler("chatid",      cmd_chatid))
     app.add_handler(CommandHandler("help",        cmd_help))
     app.add_handler(CommandHandler("price",       cmd_price))
-    app.add_handler(CommandHandler("stats",       cmd_stats))
-
     app.add_handler(CommandHandler("lang",        cmd_lang))
     app.add_handler(CommandHandler("test",        cmd_test))
     app.add_handler(CommandHandler("alert",       cmd_alert))
