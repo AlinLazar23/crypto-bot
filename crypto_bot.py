@@ -106,7 +106,7 @@ TEXTS: dict[str, dict] = {
         "myalerts_title":     "*Alertele tale*\n",
         "myalerts_footer":    "\nFolosește `/removealert <număr>` pentru a șterge.",
         "removealert_none":   "Nu ai alerte de șters.",
-        "removealert_usage":  "❓ *Cum folosești /removealert:*\n\n1. Scrie `/myalerts` pentru a vedea alertele tale numerotate\n2. Apoi `/removealert <număr>` pentru a șterge\n\nExemplu: `/removealert 1` — șterge prima alertă din listă",
+        "removealert_usage":  "🗑 Pentru a șterge o alertă, scrie `/removealert` urmat de numărul ei — de exemplu `/removealert 1`",
         "removealert_done":   "🗑 Alertă ștearsă: *{name}* @ {price}",
         "removealert_bad":    "❌ Număr invalid. Folosește /myalerts.",
         "alert_triggered":    "🔔 *Alertă de preț activată!*\n\n*{name}* ({symbol}) a {verb} {price}\nȚinta ta era: {target}",
@@ -168,7 +168,7 @@ TEXTS: dict[str, dict] = {
         "myalerts_title":     "*Your alerts*\n",
         "myalerts_footer":    "\nUse `/removealert <number>` to delete.",
         "removealert_none":   "No alerts to delete.",
-        "removealert_usage":  "❓ *How to use /removealert:*\n\n1. Type `/myalerts` to see your numbered alerts\n2. Then `/removealert <number>` to delete\n\nExample: `/removealert 1` — deletes the first alert in the list",
+        "removealert_usage":  "🗑 To delete an alert, type `/removealert` followed by its number — for example `/removealert 1`. You can find the number by typing `/myalerts`.",
         "removealert_done":   "🗑 Alert deleted: *{name}* @ {price}",
         "removealert_bad":    "❌ Invalid number. Use /myalerts.",
         "alert_triggered":    "🔔 *Price alert triggered!*\n\n*{name}* ({symbol}) has {verb} {price}\nYour target was: {target}",
@@ -182,7 +182,7 @@ TEXTS: dict[str, dict] = {
         "fng_greed":          "⚠️ Greed increasing → be cautious, don't chase FOMO",
         "fng_extreme_greed":  "🚨 Extreme euphoria → high risk of correction",
         "loading":            "⏳ Loading...",
-        "portfolio_empty":    "📁 *{ptype}* portfolio is empty.\n\n*Available commands:*\n`/portfolio {ptype} add BTC 0.5 45000` — add\n`/portfolio {ptype} remove BTC` — remove",
+        "portfolio_empty":    "📁 *{Ptype}* portfolio is empty.\n\n*Available commands:*\n`/portfolio {ptype} add BTC 0.5 45000` — add\n`/portfolio {ptype} remove BTC` — remove",
         "portfolio_added":    "✅ Added: *{symbol}* \xd7{amount} at {price}",
         "portfolio_removed":  "🗑 Removed from portfolio: *{symbol}*",
         "portfolio_not_found":"❌ *{symbol}* is not in your portfolio.",
@@ -859,8 +859,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_in_correct_topic(update):
         await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
         return
-    await _delete_cmd(update)
-    await _dm_or_reply(update, context, t(uid, "help_msg"), parse_mode="Markdown")
+    await update.message.reply_text(t(uid, "help_msg"), parse_mode="Markdown")
 
 async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid      = update.effective_user.id
@@ -908,9 +907,8 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🏦 Mkt Cap: {fmt_large(data['market_cap'])}\n"
         f"💹 {lbl_vol}: {fmt_large(data['volume_24h'])}\n"
     )
-    keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"price:{slug}")]]
     if msg:
-        await msg.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        await msg.edit_text(text, parse_mode="Markdown")
 
 
 async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
