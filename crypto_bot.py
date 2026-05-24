@@ -63,6 +63,7 @@ TOPIC_PIATA     = int(os.environ.get("TOPIC_PIATA",     "0"))
 TOPIC_STIRI     = int(os.environ.get("TOPIC_STIRI",     "0"))
 TOPIC_DATE      = int(os.environ.get("TOPIC_DATE",      "0"))
 TOPIC_PREDICTII = int(os.environ.get("TOPIC_PREDICTII", "0"))
+TOPIC_INFO      = int(os.environ.get("TOPIC_INFO",      "0"))
 
 CHECK_ALERTS_INTERVAL = 60
 TZ_RO = pytz.timezone("Europe/Bucharest")
@@ -1433,6 +1434,48 @@ async def auto_trending_job(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"auto_trending_job error: {e}")
 
+async def post_info_message(bot):
+    """Trimite mesajul informativ în TOPIC_INFO la pornirea botului."""
+    if not TOPIC_INFO or not GROUP_CHAT_ID:
+        return
+    text = (
+        "ℹ️ *Bine ai venit! Iată ce poate face botul nostru crypto:*\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "\n"
+        "📌 *Comenzi disponibile* _(scrie în Comenzi bot)_\n"
+        "/price `<coin>` — Preț live cu statistici complete\n"
+        "/alert `<coin> <preț>` — Setează o alertă de preț\n"
+        "/myalerts — Vezi alertele tale active\n"
+        "/removealert `<nr>` — Șterge o alertă\n"
+        "/portfolio `[normal|risk]` — Portofoliu personal\n"
+        "/watchlist — Urmărește monede preferate\n"
+        "/lang — Schimbă limba (RO / EN)\n"
+        "/help — Lista completă de comenzi\n"
+        "\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "📂 *Topicuri grup:*\n"
+        "💬 *Comenzi bot* — trimite comenzile aici\n"
+        "🏪 *Piață* — trending automat la 00:05 și 12:05\n"
+        "🗒️ *Știri* — știri crypto automate la 6h\n"
+        "🖥️ *Date & Analize* — statistici automate la 00:00 și 12:00\n"
+        "💡 *Predicții / Anticipări* — alerte de preț personale\n"
+        "ℹ️ *Info* — informații generale despre bot\n"
+        "\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "⚡ _Datele sunt furnizate de CoinGecko & Alternative.me_"
+    )
+    try:
+        await bot.send_message(
+            chat_id=GROUP_CHAT_ID,
+            message_thread_id=TOPIC_INFO,
+            text=text,
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+        )
+        logger.info("post_info_message: trimis cu succes")
+    except Exception as e:
+        logger.error(f"post_info_message error: {e}")
+
 async def auto_stiri_job(context: ContextTypes.DEFAULT_TYPE):
     """Trimite știri automat în TOPIC_STIRI la 6h (dacă CRYPTOPANIC_TOKEN setat)."""
     if not TOPIC_STIRI:
@@ -1449,8 +1492,11 @@ async def auto_stiri_job(context: ContextTypes.DEFAULT_TYPE):
 
 # ─── MAIN ──────────────────────────────────────────────────────────────────────
 
+async def on_startup(app):
+    await post_info_message(app.bot)
+
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(on_startup).build()
 
     app.add_handler(CommandHandler("chatid",      cmd_chatid))
     app.add_handler(CommandHandler("help",        cmd_help))
@@ -1478,6 +1524,7 @@ def main():
     print(f"  TOPIC_STIRI    : {TOPIC_STIRI      or 'neconfigurat'}")
     print(f"  TOPIC_DATE     : {TOPIC_DATE       or 'neconfigurat'}")
     print(f"  TOPIC_PREDICTII: {TOPIC_PREDICTII  or 'neconfigurat'}")
+    print(f"  TOPIC_INFO     : {TOPIC_INFO       or 'neconfigurat'}")
     print(f"  CRYPTOPANIC    : {'configurat' if CRYPTOPANIC_TOKEN else 'neconfigurat (stiri dezactivate)'}")
     print(f"  JSONBIN        : {'activ (' + JSONBIN_BIN + ')' if JSONBIN_BIN else 'neconfigurat (alerte nu persista)'}")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
