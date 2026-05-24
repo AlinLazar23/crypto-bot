@@ -139,6 +139,7 @@ TEXTS: dict[str, dict] = {
         "watchlist_not_found":"❌ *{symbol}* nu este în watchlist.",
         "watchlist_usage":    "`/watchlist add <coin>` — adaugă\n`/watchlist remove <coin>` — șterge",
         "watchlist_title":    "👁 *Watchlist (24h)*",
+        "stiri_title":        "*📰 Știri Crypto — {now}*\n",
     },
     "en": {
         "topic_redirect":     "⚠️ Commands must be sent in the *Commands* topic.",
@@ -201,6 +202,7 @@ TEXTS: dict[str, dict] = {
         "watchlist_not_found":"❌ *{symbol}* is not in your watchlist.",
         "watchlist_usage":    "`/watchlist add <coin>` — add\n`/watchlist remove <coin>` — remove",
         "watchlist_title":    "👁 *Watchlist (24h)*",
+        "stiri_title":        "*📰 Crypto News — {now}*\n",
     },
 }
 
@@ -262,6 +264,7 @@ def load_data() -> tuple[dict, dict, dict, dict]:
     lang_raw       = raw.pop("__lang__", {})
     portfolios_raw = raw.pop("__portfolios__", {})
     watchlists_raw = raw.pop("__watchlists__", {})
+    raw.pop("__group_lang__", None)
     alerts_out     = {int(k): v for k, v in raw.items()}
     lang_out       = {int(k): v for k, v in lang_raw.items()}
     portfolios_out = {int(k): _migrate_portfolio(v) for k, v in portfolios_raw.items()}
@@ -292,6 +295,7 @@ user_alerts:     dict[int, list[dict]]      = _loaded_alerts
 user_portfolios: dict[int, dict[str, dict]] = _loaded_portfolios
 user_watchlists: dict[int, list[str]]       = _loaded_watchlists
 user_lang.update(_loaded_lang)
+user_lang[-1] = "en"  # uid rezervat pentru mesajele din topicuri — întotdeauna engleză
 
 # ─── CACHE (evită rate limiting CoinGecko) ─────────────────────────────────────
 _cache: dict[str, tuple[any, float]] = {}
@@ -1232,9 +1236,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if fg and global_data and prices:
                 break
         if not fg or not global_data or not prices:
-            await query.edit_message_text("❌ Nu s-au putut obține datele. Încearcă în 1 minut.")
+            await query.edit_message_text("❌ Could not fetch data. Try again in 1 minute.")
             return
-        text     = format_stats(fg, global_data, prices)
+        text     = format_stats(fg, global_data, prices, uid=-1)
         keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
         await query.edit_message_text(text, parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(keyboard))
@@ -1405,7 +1409,7 @@ async def auto_stats_job(context: ContextTypes.DEFAULT_TYPE):
         if not fg or not global_data or not prices:
             logger.error("auto_stats_job: nu s-au putut obtine datele")
             return
-        text     = format_stats(fg, global_data, prices)
+        text     = format_stats(fg, global_data, prices, uid=-1)
         keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
         await post_to_topic(context.bot, TOPIC_DATE, text, keyboard)
         logger.info("auto_stats_job: trimis cu succes")
@@ -1421,7 +1425,7 @@ async def auto_trending_job(context: ContextTypes.DEFAULT_TYPE):
         if not coins:
             logger.error("auto_trending_job: nu s-au putut obtine datele")
             return
-        lines = ["*🔥 Trending pe CoinGecko*\n"]
+        lines = [t(-1, "trending_title")]
         for item in coins[:7]:
             c    = item["item"]
             rank = c.get("market_cap_rank", "?")
@@ -1439,30 +1443,30 @@ async def post_info_message(bot):
     if not TOPIC_INFO or not GROUP_CHAT_ID:
         return
     text = (
-        "ℹ️ *Bine ai venit! Iată ce poate face botul nostru crypto:*\n"
+        "ℹ️ *Welcome! Here's what our crypto bot can do:*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "\n"
-        "📌 *Comenzi disponibile* _(scrie în Comenzi bot)_\n"
-        "/price `<coin>` — Preț live cu statistici complete\n"
-        "/alert `<coin> <preț>` — Setează o alertă de preț\n"
-        "/myalerts — Vezi alertele tale active\n"
-        "/removealert `<nr>` — Șterge o alertă\n"
-        "/portfolio `[normal|risk]` — Portofoliu personal\n"
-        "/watchlist — Urmărește monede preferate\n"
-        "/lang — Schimbă limba (RO / EN)\n"
-        "/help — Lista completă de comenzi\n"
+        "📌 *Available commands* _(type in Commands topic)_\n"
+        "/price `<coin>` — Live price with full stats\n"
+        "/alert `<coin> <price>` — Set a price alert\n"
+        "/myalerts — View your active alerts\n"
+        "/removealert `<nr>` — Delete an alert\n"
+        "/portfolio `[normal|risk]` — Personal portfolio\n"
+        "/watchlist — Track your favourite coins\n"
+        "/lang — Change language (RO / EN)\n"
+        "/help — Full command list\n"
         "\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "📂 *Topicuri grup:*\n"
-        "💬 *Comenzi bot* — trimite comenzile aici\n"
-        "🏪 *Piață* — trending automat la 00:05 și 12:05\n"
-        "🗒️ *Știri* — știri crypto automate la 6h\n"
-        "🖥️ *Date & Analize* — statistici automate la 00:00 și 12:00\n"
-        "💡 *Predicții / Anticipări* — alerte de preț personale\n"
-        "ℹ️ *Info* — informații generale despre bot\n"
+        "📂 *Group topics:*\n"
+        "💬 *Commands* — send commands here\n"
+        "🏪 *Market* — auto trending at 00:05 & 12:05\n"
+        "🗒️ *News* — auto crypto news every 6h\n"
+        "🖥️ *Data & Analysis* — auto stats at 00:00 & 12:00\n"
+        "💡 *Predictions / Anticipations* — personal price alerts\n"
+        "ℹ️ *Info* — general bot information\n"
         "\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "⚡ _Datele sunt furnizate de CoinGecko & Alternative.me_"
+        "⚡ _Data provided by CoinGecko & Alternative.me_"
     )
     try:
         await bot.send_message(
@@ -1485,7 +1489,7 @@ async def auto_stiri_job(context: ContextTypes.DEFAULT_TYPE):
         logger.info("auto_stiri_job: CRYPTOPANIC_TOKEN neconfigurat sau nicio știre")
         return
     now   = datetime.datetime.now(TZ_RO).strftime("%d.%m.%Y %H:%M")
-    lines = [f"*📰 Știri Crypto — {now}*\n"]
+    lines = [t(-1, "stiri_title", now=now)]
     for n in news:
         lines.append(f"• [{n['title']}]({n['url']})")
     await post_to_topic(context.bot, TOPIC_STIRI, "\n".join(lines))
