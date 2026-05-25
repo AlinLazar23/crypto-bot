@@ -362,6 +362,13 @@ def calculate_portfolio(portfolio: dict) -> dict | None:
         if not slug:
             continue
         pd        = prices_data.get(slug, {})
+        if not pd:
+            new_slug = resolve_slug(symbol)
+            if new_slug and new_slug != slug:
+                retry = get_prices_batch([new_slug])
+                pd   = retry.get(new_slug, {})
+                if pd:
+                    info["slug"] = new_slug
         cur_price = pd.get("usd", 0)
         change_24 = pd.get("usd_24h_change", 0)
         amount    = float(info.get("amount", 0))
@@ -473,7 +480,7 @@ COIN_SLUG_MAP = {
     "ICP": "internet-computer", "HBAR": "hedera-hashgraph",
     "FIL": "filecoin", "VET": "vechain", "SEI": "sei-network",
     "TIA": "celestia", "GRT": "the-graph", "EGLD": "elrond-erd-2",
-    "VIRTUAL": "virtuals-protocol", "HYPE": "hyperliquid",
+    "HYPE": "hyperliquid",
     "ASTR": "astar", "KAS": "kaspa", "IMX": "immutable-x",
     "MNT": "mantle", "STX": "stacks", "FLOW": "flow",
     "GALA": "gala", "OKB": "okb",
