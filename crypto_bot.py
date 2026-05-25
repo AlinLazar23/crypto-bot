@@ -500,7 +500,7 @@ COIN_SLUG_MAP = {
     "TIA": "celestia", "GRT": "the-graph", "EGLD": "elrond-erd-2",
     "HYPE": "hyperliquid",
     "LUNA": "terra-luna-2", "LUNC": "terra-luna",
-    "1MBABYDOGE": "1m-baby-doge-coin",
+    "1MBABYDOGE": "1mbabydoge",
     "ASTR": "astar", "KAS": "kaspa", "IMX": "immutable-x",
     "MNT": "mantle", "STX": "stacks", "FLOW": "flow",
     "GALA": "gala", "OKB": "okb",
