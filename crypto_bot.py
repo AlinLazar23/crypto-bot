@@ -221,11 +221,12 @@ OWNER_ID      = int(os.environ.get("OWNER_ID", "0"))
 JSONBIN_BIN   = os.environ.get("JSONBIN_BIN", "")
 JSONBIN_BASE  = "https://api.jsonbin.io/v3/b"
 
+_jsonbin_load_ok = False  # True doar dacă load_data() a citit cu succes din JSONBin
+
 def _jsonbin_headers() -> dict:
     return {"X-Master-Key": JSONBIN_KEY, "Content-Type": "application/json"}
 
 def _build_payload() -> dict:
-    """Construiește payload-ul complet (alerte + limbi + portofolii + watchlists) pentru salvare."""
     payload = {str(k): v for k, v in user_alerts.items()}
     if user_lang:
         payload["__lang__"] = {str(k): v for k, v in user_lang.items()}
@@ -236,13 +237,12 @@ def _build_payload() -> dict:
     return payload
 
 def _migrate_portfolio(raw: dict) -> dict:
-    """Convertește portofoliu din formatul vechi (flat) la cel nou (normal/risk)."""
     if not raw or set(raw.keys()).issubset({"normal", "risk"}):
         return {"normal": raw.get("normal", {}), "risk": raw.get("risk", {})}
     return {"normal": raw, "risk": {}}
 
 def load_data() -> tuple[dict, dict, dict, dict]:
-    """Încarcă alertele, limbile, portofoliile și watchlisturile."""
+    global _jsonbin_load_ok
     raw = {}
     if JSONBIN_KEY and JSONBIN_BIN:
         try:
@@ -250,6 +250,7 @@ def load_data() -> tuple[dict, dict, dict, dict]:
                              headers=_jsonbin_headers(), timeout=10)
             if r.status_code == 200:
                 raw = r.json().get("record", {})
+                _jsonbin_load_ok = True
                 logger.info("Date încărcate din JSONBin.")
             else:
                 logger.warning(f"load_data JSONBin HTTP {r.status_code}")
@@ -259,6 +260,7 @@ def load_data() -> tuple[dict, dict, dict, dict]:
         try:
             with open(ALERTS_FILE, "r") as f:
                 raw = json.load(f)
+            _jsonbin_load_ok = True
         except Exception as e:
             logger.error(f"load_data local error: {e}")
     lang_raw       = raw.pop("__lang__", {})
@@ -274,6 +276,9 @@ def load_data() -> tuple[dict, dict, dict, dict]:
 def _do_save() -> None:
     payload = _build_payload()
     if JSONBIN_KEY and JSONBIN_BIN:
+        if not _jsonbin_load_ok:
+            logger.error("save_alerts: BLOCAT — startup load a eșuat. JSONBin NU va fi suprascris pentru a proteja datele existente.")
+            return
         try:
             r = requests.put(f"{JSONBIN_BASE}/{JSONBIN_BIN}",
                              headers=_jsonbin_headers(),
