@@ -4,7 +4,6 @@ Crypto Market Updates Telegram Bot
 Surse: CoinGecko (toate datele) + TradingView (analiză)
 Fără API key necesar! Funcționează în orice regiune.
 
-
 Requirements:
     pip install python-telegram-bot[job-queue] requests tradingview-ta pytz
 
@@ -272,23 +271,28 @@ def load_data() -> tuple[dict, dict, dict, dict]:
     watchlists_out = {int(k): v for k, v in watchlists_raw.items()}
     return alerts_out, lang_out, portfolios_out, watchlists_out
 
-def save_alerts() -> None:
+def _do_save() -> None:
     payload = _build_payload()
     if JSONBIN_KEY and JSONBIN_BIN:
         try:
             r = requests.put(f"{JSONBIN_BASE}/{JSONBIN_BIN}",
                              headers=_jsonbin_headers(),
-                             json=payload, timeout=10)
-            if r.status_code == 200:
+                             json=payload, timeout=15)
+            if r.status_code in (200, 201):
+                logger.info("save_alerts: JSONBin OK")
                 return
-            logger.warning(f"save_alerts JSONBin HTTP {r.status_code}")
+            logger.error(f"save_alerts JSONBin HTTP {r.status_code} — {r.text[:200]}")
         except Exception as e:
             logger.error(f"save_alerts JSONBin error: {e}")
     try:
         with open(ALERTS_FILE, "w") as f:
             json.dump(payload, f, indent=2)
+        logger.warning("save_alerts: salvat LOCAL (JSONBin indisponibil — datele se vor pierde la restart!)")
     except Exception as e:
         logger.error(f"save_alerts local error: {e}")
+
+async def save_alerts() -> None:
+    await asyncio.to_thread(_do_save)
 
 
 _loaded_alerts, _loaded_lang, _loaded_portfolios, _loaded_watchlists = load_data()
@@ -960,7 +964,7 @@ async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "slug": slug, "symbol": data["symbol"],
         "name": data["name"], "target": target, "direction": direction,
     })
-    save_alerts()
+    await save_alerts()
     arrow = t(uid, "alert_rise") if direction == "above" else t(uid, "alert_fall")
     if msg:
         await msg.edit_text(
@@ -994,7 +998,7 @@ async def cmd_removealert(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         removed = alerts.pop(int(context.args[0]) - 1)
-        save_alerts()
+        await save_alerts()
         await _dm_or_reply(update, context,
             t(uid, "removealert_done", name=removed["name"], price=fmt_price(removed["target"])),
             parse_mode="Markdown")
@@ -1030,7 +1034,7 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         slug = resolve_slug(symbol)
         user_portfolios[uid][ptype][symbol] = {"slug": slug, "amount": amount, "buy_price": buy_price}
-        save_alerts()
+        await save_alerts()
         ptype_label = t(uid, "portfolio_risk_label") if ptype == "risk" else t(uid, "portfolio_normal_label")
         await _dm_or_reply(update, context,
             t(uid, "portfolio_added", symbol=symbol, amount=amount, price=fmt_price(buy_price)) + f"\n_{ptype_label}_",
@@ -1048,7 +1052,7 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _dm_or_reply(update, context, t(uid, "portfolio_not_found", symbol=symbol), parse_mode="Markdown")
             return
         del user_portfolios[uid][ptype][symbol]
-        save_alerts()
+        await save_alerts()
         await _dm_or_reply(update, context, t(uid, "portfolio_removed", symbol=symbol), parse_mode="Markdown")
         return
 
@@ -1150,7 +1154,7 @@ async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _dm_or_reply(update, context, t(uid, "watchlist_already", symbol=symbol), parse_mode="Markdown")
             return
         watchlist.append(symbol)
-        save_alerts()
+        await save_alerts()
         await _dm_or_reply(update, context, t(uid, "watchlist_added", symbol=symbol), parse_mode="Markdown")
         return
 
@@ -1163,7 +1167,7 @@ async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _dm_or_reply(update, context, t(uid, "watchlist_not_found", symbol=symbol), parse_mode="Markdown")
             return
         watchlist.remove(symbol)
-        save_alerts()
+        await save_alerts()
         await _dm_or_reply(update, context, t(uid, "watchlist_removed", symbol=symbol), parse_mode="Markdown")
         return
 
@@ -1360,7 +1364,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         uid  = query.from_user.id
         lang = data.split(":", 1)[1]
         user_lang[uid] = lang
-        save_alerts()
+        await save_alerts()
         await query.edit_message_text(t(uid, "lang_set"), parse_mode="Markdown")
 
     elif data.startswith("price:"):
@@ -1417,7 +1421,7 @@ async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
         for i in reversed(to_remove):
             alerts.pop(i)
         if to_remove:
-            save_alerts()
+            await save_alerts()
 
 async def auto_stats_job(context: ContextTypes.DEFAULT_TYPE):
     """Trimite stats automat în TOPIC_DATE la 00:00 și 12:00."""
