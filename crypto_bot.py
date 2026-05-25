@@ -328,6 +328,10 @@ def fmt_pct(value) -> str:
 def get_prices_batch(slugs: list[str]) -> dict:
     if not slugs:
         return {}
+    cache_key = "batch:" + ",".join(sorted(slugs))
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
     for attempt in range(3):
         if attempt > 0:
             time.sleep(5)
@@ -343,7 +347,9 @@ def get_prices_batch(slugs: list[str]) -> dict:
                 timeout=12,
             )
             if r.status_code == 200:
-                return r.json()
+                result = r.json()
+                cache_set(cache_key, result)
+                return result
             if r.status_code == 429:
                 time.sleep(int(r.headers.get("Retry-After", 15)))
             logger.warning(f"get_prices_batch HTTP {r.status_code} (attempt {attempt + 1})")
@@ -354,21 +360,29 @@ def get_prices_batch(slugs: list[str]) -> dict:
 def calculate_portfolio(portfolio: dict) -> dict | None:
     if not portfolio:
         return None
-    slugs = [info.get("slug") or resolve_slug(sym) for sym, info in portfolio.items()]
+    items = list(portfolio.items())
+    slugs = [info.get("slug") or resolve_slug(sym) for sym, info in items]
     prices_data = get_prices_batch([s for s in slugs if s])
+
+    # Re-rezolvare batch pentru slug-urile care n-au returnat preț
+    retry_needed = {}  # index → new_slug
+    for i, ((symbol, info), slug) in enumerate(zip(items, slugs)):
+        if slug and not prices_data.get(slug):
+            new_slug = resolve_slug(symbol)
+            if new_slug and new_slug != slug:
+                retry_needed[i] = new_slug
+                slugs[i] = new_slug
+                info["slug"] = new_slug
+    if retry_needed:
+        retry_data = get_prices_batch(list(set(retry_needed.values())))
+        prices_data.update(retry_data)
+
     coins_data  = []
     total_value = total_invested = 0.0
-    for (symbol, info), slug in zip(portfolio.items(), slugs):
+    for (symbol, info), slug in zip(items, slugs):
         if not slug:
             continue
         pd        = prices_data.get(slug, {})
-        if not pd:
-            new_slug = resolve_slug(symbol)
-            if new_slug and new_slug != slug:
-                retry = get_prices_batch([new_slug])
-                pd   = retry.get(new_slug, {})
-                if pd:
-                    info["slug"] = new_slug
         cur_price = pd.get("usd", 0)
         change_24 = pd.get("usd_24h_change", 0)
         amount    = float(info.get("amount", 0))
@@ -485,6 +499,8 @@ COIN_SLUG_MAP = {
     "FIL": "filecoin", "VET": "vechain", "SEI": "sei-network",
     "TIA": "celestia", "GRT": "the-graph", "EGLD": "elrond-erd-2",
     "HYPE": "hyperliquid",
+    "LUNA": "terra-luna-2", "LUNC": "terra-luna",
+    "1MBABYDOGE": "1m-baby-doge-coin",
     "ASTR": "astar", "KAS": "kaspa", "IMX": "immutable-x",
     "MNT": "mantle", "STX": "stacks", "FLOW": "flow",
     "GALA": "gala", "OKB": "okb",
