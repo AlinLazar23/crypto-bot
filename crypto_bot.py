@@ -410,6 +410,22 @@ async def post_to_topic(bot, topic_id: int, text: str, keyboard=None):
     except Exception as e:
         logger.error(f"post_to_topic error (topic={topic_id}): {e}")
 
+MAX_MSG_LEN = 4000
+
+def _split_text(text: str) -> list[str]:
+    if len(text) <= MAX_MSG_LEN:
+        return [text]
+    parts, cur, cur_len = [], [], 0
+    for line in text.split("\n"):
+        if cur_len + len(line) + 1 > MAX_MSG_LEN and cur:
+            parts.append("\n".join(cur))
+            cur, cur_len = [], 0
+        cur.append(line)
+        cur_len += len(line) + 1
+    if cur:
+        parts.append("\n".join(cur))
+    return parts
+
 # ─── FORMATARE ─────────────────────────────────────────────────────────────────
 
 def fmt_price(value) -> str:
@@ -1074,8 +1090,11 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"`/portfolio {ptype} add BTC 0.5 45000` — {add_lbl}",
             f"`/portfolio {ptype} remove BTC` — {rem_lbl}",
         ]
+        parts = _split_text("\n".join(lines))
         if msg:
-            await msg.edit_text("\n".join(lines), parse_mode="Markdown")
+            await msg.edit_text(parts[0], parse_mode="Markdown")
+        for part in parts[1:]:
+            await context.bot.send_message(chat_id=uid, text=part, parse_mode="Markdown")
         return
 
     # /portfolio — overview ambele
@@ -1288,7 +1307,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"`/portfolio {ptype} add BTC 0.5 45000` — {add_lbl}",
                 f"`/portfolio {ptype} remove BTC` — {rem_lbl}",
             ]
-            await query.edit_message_text("\n".join(lines), parse_mode="Markdown")
+            parts = _split_text("\n".join(lines))
+            await query.edit_message_text(parts[0], parse_mode="Markdown")
+            for part in parts[1:]:
+                await context.bot.send_message(chat_id=uid, text=part, parse_mode="Markdown")
         else:
             normal_data = user_portfolios[uid].get("normal", {})
             risk_data   = user_portfolios[uid].get("risk",   {})
