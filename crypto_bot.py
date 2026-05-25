@@ -427,15 +427,19 @@ MAX_MSG_LEN = 4000
 def _split_text(text: str) -> list[str]:
     if len(text) <= MAX_MSG_LEN:
         return [text]
-    parts, cur, cur_len = [], [], 0
-    for line in text.split("\n"):
-        if cur_len + len(line) + 1 > MAX_MSG_LEN and cur:
-            parts.append("\n".join(cur))
-            cur, cur_len = [], 0
-        cur.append(line)
-        cur_len += len(line) + 1
-    if cur:
-        parts.append("\n".join(cur))
+    # Taie doar la linii goale (între blocuri), nu în mijlocul unui bloc
+    blocks = text.split("\n\n")
+    parts, cur_blocks, cur_len = [], [], 0
+    for block in blocks:
+        block_len = len(block) + 2  # +2 pentru \n\n
+        if cur_len + block_len > MAX_MSG_LEN and cur_blocks:
+            parts.append("\n\n".join(cur_blocks))
+            cur_blocks, cur_len = [block], block_len
+        else:
+            cur_blocks.append(block)
+            cur_len += block_len
+    if cur_blocks:
+        parts.append("\n\n".join(cur_blocks))
     return parts
 
 # ─── FORMATARE ─────────────────────────────────────────────────────────────────
