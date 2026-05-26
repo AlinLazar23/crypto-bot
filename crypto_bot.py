@@ -4,6 +4,7 @@ Crypto Market Updates Telegram Bot
 Surse: CoinGecko (toate datele) + TradingView (analiză)
 Fără API key necesar! Funcționează în orice regiune.
 
+
 Requirements:
     pip install python-telegram-bot[job-queue] requests tradingview-ta pytz
 
