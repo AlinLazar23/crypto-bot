@@ -1103,12 +1103,15 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ptype_label = t(uid, "portfolio_risk_label") if ptype == "risk" else t(uid, "portfolio_normal_label")
         other_type  = "risk" if ptype == "normal" else "normal"
         other_label = t(uid, "portfolio_risk_label") if other_type == "risk" else t(uid, "portfolio_normal_label")
+        pf["coins"].sort(key=lambda c: c["current_value"], reverse=True)
         w24h = (sum(c["change_24h"] * c["current_value"] for c in pf["coins"]) / pf["total_value"]) if pf["total_value"] > 0 else 0
-        lines = [f"{t(uid, 'portfolio_title')} — {ptype_label}  |  24h {fmt_pct(w24h)}", "━" * 20, ""]
+        w24h_usd = sum(c["change_24h"] / 100 * c["current_value"] for c in pf["coins"])
+        w24h_usd_str = ("+" if w24h_usd >= 0 else "-") + fmt_price(abs(w24h_usd))
+        lines = [f"{t(uid, 'portfolio_title')} — {ptype_label}  |  24h {fmt_pct(w24h)} ({w24h_usd_str})", "━" * 20, ""]
         for c in pf["coins"]:
             alloc = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
             lines.append(
-                f"• *{c['symbol']}* {fmt_price(c['current_price'])} | P&L {fmt_pct(c['pnl_pct'])} | `{alloc:.1f}%`"
+                f"• *{c['symbol']}* {fmt_price(c['current_price'])} | P&L {fmt_pct(c['pnl_pct'])} ({fmt_price(c['invested'])}) | `{alloc:.1f}%`"
             )
         pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
         add_lbl = "adaugă" if gl(uid) == "ro" else "add"
@@ -1318,12 +1321,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ptype_label = t(uid, "portfolio_risk_label") if ptype == "risk" else t(uid, "portfolio_normal_label")
             other_type  = "risk" if ptype == "normal" else "normal"
             other_label = t(uid, "portfolio_risk_label") if other_type == "risk" else t(uid, "portfolio_normal_label")
+            pf["coins"].sort(key=lambda c: c["current_value"], reverse=True)
             w24h = (sum(c["change_24h"] * c["current_value"] for c in pf["coins"]) / pf["total_value"]) if pf["total_value"] > 0 else 0
-            lines = [f"{t(uid, 'portfolio_title')} — {ptype_label}  |  24h {fmt_pct(w24h)}", "━" * 20, ""]
+            w24h_usd = sum(c["change_24h"] / 100 * c["current_value"] for c in pf["coins"])
+            w24h_usd_str = ("+" if w24h_usd >= 0 else "-") + fmt_price(abs(w24h_usd))
+            lines = [f"{t(uid, 'portfolio_title')} — {ptype_label}  |  24h {fmt_pct(w24h)} ({w24h_usd_str})", "━" * 20, ""]
             for c in pf["coins"]:
                 alloc = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
                 lines.append(
-                    f"• *{c['symbol']}* {fmt_price(c['current_price'])} | P&L {fmt_pct(c['pnl_pct'])} | `{alloc:.1f}%`"
+                    f"• *{c['symbol']}* {fmt_price(c['current_price'])} | P&L {fmt_pct(c['pnl_pct'])} ({fmt_price(c['invested'])}) | `{alloc:.1f}%`"
                 )
             pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
             add_lbl = "adaugă" if gl(uid) == "ro" else "add"
