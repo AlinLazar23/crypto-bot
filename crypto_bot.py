@@ -215,16 +215,15 @@ def t(uid: int, key: str, **kw) -> str:
     return val.format(**kw) if kw else val
 
 # ─── PERSISTENT ALERTS ─────────────────────────────────────────────────────────
-ALERTS_FILE   = os.path.join("/data" if os.path.isdir("/data") else ".", "alerts.json")
-JSONBIN_KEY   = os.environ.get("JSONBIN_KEY", "")
-OWNER_ID      = int(os.environ.get("OWNER_ID", "0"))
-JSONBIN_BIN   = os.environ.get("JSONBIN_BIN", "")
-JSONBIN_BASE  = "https://api.jsonbin.io/v3/b"
+ALERTS_FILE     = os.path.join("/data" if os.path.isdir("/data") else ".", "alerts.json")
+FIREBASE_URL    = os.environ.get("FIREBASE_URL", "")
+FIREBASE_SECRET = os.environ.get("FIREBASE_SECRET", "")
+OWNER_ID        = int(os.environ.get("OWNER_ID", "0"))
 
-_jsonbin_load_ok = False  # True doar dacă load_data() a citit cu succes din JSONBin
+_firebase_load_ok = False  # True doar dacă load_data() a citit cu succes din Firebase
 
-def _jsonbin_headers() -> dict:
-    return {"X-Master-Key": JSONBIN_KEY, "Content-Type": "application/json"}
+def _firebase_params() -> dict:
+    return {"auth": FIREBASE_SECRET}
 
 def _build_payload() -> dict:
     payload = {str(k): v for k, v in user_alerts.items()}
@@ -242,25 +241,25 @@ def _migrate_portfolio(raw: dict) -> dict:
     return {"normal": raw, "risk": {}}
 
 def load_data() -> tuple[dict, dict, dict, dict]:
-    global _jsonbin_load_ok
+    global _firebase_load_ok
     raw = {}
-    if JSONBIN_KEY and JSONBIN_BIN:
+    if FIREBASE_URL and FIREBASE_SECRET:
         try:
-            r = requests.get(f"{JSONBIN_BASE}/{JSONBIN_BIN}/latest",
-                             headers=_jsonbin_headers(), timeout=10)
+            r = requests.get(f"{FIREBASE_URL}/botdata.json",
+                             params=_firebase_params(), timeout=10)
             if r.status_code == 200:
-                raw = r.json().get("record", {})
-                _jsonbin_load_ok = True
-                logger.info("Date încărcate din JSONBin.")
+                raw = r.json() or {}
+                _firebase_load_ok = True
+                logger.info("Date încărcate din Firebase.")
             else:
-                logger.warning(f"load_data JSONBin HTTP {r.status_code}")
+                logger.warning(f"load_data Firebase HTTP {r.status_code}")
         except Exception as e:
-            logger.error(f"load_data JSONBin error: {e}")
+            logger.error(f"load_data Firebase error: {e}")
     if not raw and os.path.exists(ALERTS_FILE):
         try:
             with open(ALERTS_FILE, "r") as f:
                 raw = json.load(f)
-            _jsonbin_load_ok = True
+            _firebase_load_ok = True
         except Exception as e:
             logger.error(f"load_data local error: {e}")
     lang_raw       = raw.pop("__lang__", {})
@@ -275,24 +274,24 @@ def load_data() -> tuple[dict, dict, dict, dict]:
 
 def _do_save() -> None:
     payload = _build_payload()
-    if JSONBIN_KEY and JSONBIN_BIN:
-        if not _jsonbin_load_ok:
-            logger.error("save_alerts: BLOCAT — startup load a eșuat. JSONBin NU va fi suprascris pentru a proteja datele existente.")
+    if FIREBASE_URL and FIREBASE_SECRET:
+        if not _firebase_load_ok:
+            logger.error("save_alerts: BLOCAT — startup load a eșuat. Firebase NU va fi suprascris pentru a proteja datele existente.")
             return
         try:
-            r = requests.put(f"{JSONBIN_BASE}/{JSONBIN_BIN}",
-                             headers=_jsonbin_headers(),
+            r = requests.put(f"{FIREBASE_URL}/botdata.json",
+                             params=_firebase_params(),
                              json=payload, timeout=15)
             if r.status_code in (200, 201):
-                logger.info("save_alerts: JSONBin OK")
+                logger.info("save_alerts: Firebase OK")
                 return
-            logger.error(f"save_alerts JSONBin HTTP {r.status_code} — {r.text[:200]}")
+            logger.error(f"save_alerts Firebase HTTP {r.status_code} — {r.text[:200]}")
         except Exception as e:
-            logger.error(f"save_alerts JSONBin error: {e}")
+            logger.error(f"save_alerts Firebase error: {e}")
     try:
         with open(ALERTS_FILE, "w") as f:
             json.dump(payload, f, indent=2)
-        logger.warning("save_alerts: salvat LOCAL (JSONBin indisponibil — datele se vor pierde la restart!)")
+        logger.warning("save_alerts: salvat LOCAL (Firebase indisponibil — datele se vor pierde la restart!)")
     except Exception as e:
         logger.error(f"save_alerts local error: {e}")
 
@@ -1589,7 +1588,7 @@ def main():
     print(f"  TOPIC_PREDICTII: {TOPIC_PREDICTII  or 'neconfigurat'}")
     print(f"  TOPIC_INFO     : {TOPIC_INFO       or 'neconfigurat'}")
     print(f"  CRYPTOPANIC    : {'configurat' if CRYPTOPANIC_TOKEN else 'neconfigurat (stiri dezactivate)'}")
-    print(f"  JSONBIN        : {'activ (' + JSONBIN_BIN + ')' if JSONBIN_BIN else 'neconfigurat (alerte nu persista)'}")
+    print(f"  FIREBASE       : {'activ (' + FIREBASE_URL + ')' if FIREBASE_URL else 'neconfigurat (alerte nu persista)'}")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
