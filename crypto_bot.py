@@ -1107,16 +1107,15 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for c in pf["coins"]:
             alloc = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
             lines.append(
-                f"*{c['symbol']}* — {fmt_price(c['current_price'])}\n"
-                f"  Cantitate: `{c['amount']}`  |  Valoare: `{fmt_price(c['current_value'])}`\n"
-                f"  Cumpărat: `{fmt_price(c['buy_price'])}`  |  24h: {fmt_pct(c['change_24h'])}\n"
-                f"  P&L: `{fmt_price(c['pnl'])}` ({fmt_pct(c['pnl_pct'])})  |  Alocare: `{alloc:.1f}%`\n"
+                f"• *{c['symbol']}* {fmt_price(c['current_price'])} | "
+                f"24h {fmt_pct(c['change_24h'])} | P&L {fmt_pct(c['pnl_pct'])} | `{alloc:.1f}%`"
             )
         pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
         add_lbl = "adaugă" if gl(uid) == "ro" else "add"
         rem_lbl = "șterge" if gl(uid) == "ro" else "remove"
         cmd_lbl = "Comenzi rapide" if gl(uid) == "ro" else "Quick commands"
         lines += [
+            "",
             "━" * 20,
             f"💼 *Total valoare:* `{fmt_price(pf['total_value'])}`",
             f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
@@ -1127,12 +1126,9 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"`/portfolio {ptype} remove BTC` — {rem_lbl}",
         ]
         keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"portfolio:{ptype}")]]
-        parts = _split_text("\n".join(lines))
         if msg:
-            await msg.edit_text(parts[0], parse_mode="Markdown",
+            await msg.edit_text("\n".join(lines), parse_mode="Markdown",
                                 reply_markup=InlineKeyboardMarkup(keyboard))
-        for part in parts[1:]:
-            await context.bot.send_message(chat_id=uid, text=part, parse_mode="Markdown")
         return
 
     # /portfolio — overview ambele
@@ -1326,16 +1322,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for c in pf["coins"]:
                 alloc = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
                 lines.append(
-                    f"*{c['symbol']}* — {fmt_price(c['current_price'])}\n"
-                    f"  Cantitate: `{c['amount']}`  |  Valoare: `{fmt_price(c['current_value'])}`\n"
-                    f"  Cumpărat: `{fmt_price(c['buy_price'])}`  |  24h: {fmt_pct(c['change_24h'])}\n"
-                    f"  P&L: `{fmt_price(c['pnl'])}` ({fmt_pct(c['pnl_pct'])})  |  Alocare: `{alloc:.1f}%`\n"
+                    f"• *{c['symbol']}* {fmt_price(c['current_price'])} | "
+                    f"24h {fmt_pct(c['change_24h'])} | P&L {fmt_pct(c['pnl_pct'])} | `{alloc:.1f}%`"
                 )
             pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
             add_lbl = "adaugă" if gl(uid) == "ro" else "add"
             rem_lbl = "șterge" if gl(uid) == "ro" else "remove"
             cmd_lbl = "Comenzi rapide" if gl(uid) == "ro" else "Quick commands"
             lines += [
+                "",
                 "━" * 20,
                 f"💼 *Total valoare:* `{fmt_price(pf['total_value'])}`",
                 f"💰 *Investit:*      `{fmt_price(pf['total_invested'])}`",
@@ -1346,11 +1341,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"`/portfolio {ptype} remove BTC` — {rem_lbl}",
             ]
             keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"portfolio:{ptype}")]]
-            parts = _split_text("\n".join(lines))
-            await query.edit_message_text(parts[0], parse_mode="Markdown",
+            await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
                                           reply_markup=InlineKeyboardMarkup(keyboard))
-            for part in parts[1:]:
-                await context.bot.send_message(chat_id=uid, text=part, parse_mode="Markdown")
         else:
             normal_data = user_portfolios[uid].get("normal", {})
             risk_data   = user_portfolios[uid].get("risk",   {})
