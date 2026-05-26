@@ -4,7 +4,6 @@ Crypto Market Updates Telegram Bot
 Surse: CoinGecko (toate datele) + TradingView (analiză)
 Fără API key necesar! Funcționează în orice regiune.
 
-
 Requirements:
     pip install python-telegram-bot[job-queue] requests tradingview-ta pytz
 
@@ -1127,9 +1126,11 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"`/portfolio {ptype} add BTC 0.5 45000` — {add_lbl}",
             f"`/portfolio {ptype} remove BTC` — {rem_lbl}",
         ]
+        keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"portfolio:{ptype}")]]
         parts = _split_text("\n".join(lines))
         if msg:
-            await msg.edit_text(parts[0], parse_mode="Markdown")
+            await msg.edit_text(parts[0], parse_mode="Markdown",
+                                reply_markup=InlineKeyboardMarkup(keyboard))
         for part in parts[1:]:
             await context.bot.send_message(chat_id=uid, text=part, parse_mode="Markdown")
         return
@@ -1344,8 +1345,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"`/portfolio {ptype} add BTC 0.5 45000` — {add_lbl}",
                 f"`/portfolio {ptype} remove BTC` — {rem_lbl}",
             ]
+            keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"portfolio:{ptype}")]]
             parts = _split_text("\n".join(lines))
-            await query.edit_message_text(parts[0], parse_mode="Markdown")
+            await query.edit_message_text(parts[0], parse_mode="Markdown",
+                                          reply_markup=InlineKeyboardMarkup(keyboard))
             for part in parts[1:]:
                 await context.bot.send_message(chat_id=uid, text=part, parse_mode="Markdown")
         else:
