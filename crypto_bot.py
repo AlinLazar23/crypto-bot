@@ -291,14 +291,25 @@ def _do_save() -> None:
         if not _firebase_load_ok:
             logger.error("save_alerts: BLOCAT — startup load a eșuat. Firebase NU va fi suprascris pentru a proteja datele existente.")
             return
+        params = _firebase_params()
         try:
-            r = requests.patch(f"{FIREBASE_URL}/botdata.json",
-                               params=_firebase_params(),
-                               json=_build_firebase_patch_payload(), timeout=15)
-            if r.status_code in (200, 201):
-                logger.info("save_alerts: Firebase OK")
-                return
-            logger.error(f"save_alerts Firebase HTTP {r.status_code} — {r.text[:200]}")
+            # Alerte: PUT per user → fiecare user își actualizează doar propriile alerte
+            for uid, alerts in user_alerts.items():
+                requests.put(f"{FIREBASE_URL}/botdata/{uid}.json",
+                             params=params, json=alerts, timeout=10)
+            # Lang, portfolios, watchlists: PATCH la nivel de secțiune → merge, nu suprascrie
+            if user_lang:
+                lang_data = {str(k): v for k, v in user_lang.items() if k != -1}
+                requests.patch(f"{FIREBASE_URL}/botdata/__lang__.json",
+                               params=params, json=lang_data, timeout=10)
+            if user_portfolios:
+                requests.patch(f"{FIREBASE_URL}/botdata/__portfolios__.json",
+                               params=params, json={str(k): v for k, v in user_portfolios.items()}, timeout=10)
+            if user_watchlists:
+                requests.patch(f"{FIREBASE_URL}/botdata/__watchlists__.json",
+                               params=params, json={str(k): v for k, v in user_watchlists.items()}, timeout=10)
+            logger.info("save_alerts: Firebase OK")
+            return
         except Exception as e:
             logger.error(f"save_alerts Firebase error: {e}")
     try:
