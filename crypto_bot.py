@@ -1109,9 +1109,10 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         w24h_usd_str = ("+" if w24h_usd >= 0 else "-") + fmt_price(abs(w24h_usd))
         lines = [f"{t(uid, 'portfolio_title')} — {ptype_label}  |  24h {fmt_pct(w24h)} ({w24h_usd_str})", "━" * 20, ""]
         for c in pf["coins"]:
-            alloc = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
+            alloc   = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
+            pnl_str = ("+" if c["pnl"] >= 0 else "-") + fmt_price(abs(c["pnl"]))
             lines.append(
-                f"• *{c['symbol']}* {fmt_price(c['current_price'])} | P&L {fmt_pct(c['pnl_pct'])} ({fmt_price(c['invested'])}) | `{alloc:.1f}%`"
+                f"• *{c['symbol']}* {fmt_price(c['current_price'])} | buy {fmt_price(c['buy_price'])} ({fmt_price(c['invested'])}) | P&L {fmt_pct(c['pnl_pct'])} ({pnl_str}) | `{alloc:.1f}%`"
             )
         pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
         add_lbl = "adaugă" if gl(uid) == "ro" else "add"
@@ -1327,9 +1328,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             w24h_usd_str = ("+" if w24h_usd >= 0 else "-") + fmt_price(abs(w24h_usd))
             lines = [f"{t(uid, 'portfolio_title')} — {ptype_label}  |  24h {fmt_pct(w24h)} ({w24h_usd_str})", "━" * 20, ""]
             for c in pf["coins"]:
-                alloc = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
+                alloc   = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
+                pnl_str = ("+" if c["pnl"] >= 0 else "-") + fmt_price(abs(c["pnl"]))
                 lines.append(
-                    f"• *{c['symbol']}* {fmt_price(c['current_price'])} | P&L {fmt_pct(c['pnl_pct'])} ({fmt_price(c['invested'])}) | `{alloc:.1f}%`"
+                    f"• *{c['symbol']}* {fmt_price(c['current_price'])} | buy {fmt_price(c['buy_price'])} ({fmt_price(c['invested'])}) | P&L {fmt_pct(c['pnl_pct'])} ({pnl_str}) | `{alloc:.1f}%`"
                 )
             pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
             add_lbl = "adaugă" if gl(uid) == "ro" else "add"
