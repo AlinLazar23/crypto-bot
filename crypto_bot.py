@@ -235,6 +235,20 @@ def _build_payload() -> dict:
         payload["__watchlists__"] = {str(k): v for k, v in user_watchlists.items()}
     return payload
 
+def _build_firebase_patch_payload() -> dict:
+    """Payload plat cu căi per-user pentru Firebase PATCH — nu suprascrie alți utilizatori."""
+    payload = {}
+    for uid, alerts in user_alerts.items():
+        payload[str(uid)] = alerts
+    for uid, lang in user_lang.items():
+        if uid != -1:
+            payload[f"__lang__/{uid}"] = lang
+    for uid, portfolio in user_portfolios.items():
+        payload[f"__portfolios__/{uid}"] = portfolio
+    for uid, watchlist in user_watchlists.items():
+        payload[f"__watchlists__/{uid}"] = watchlist
+    return payload
+
 def _migrate_portfolio(raw: dict) -> dict:
     if not raw or set(raw.keys()).issubset({"normal", "risk"}):
         return {"normal": raw.get("normal", {}), "risk": raw.get("risk", {})}
@@ -273,15 +287,14 @@ def load_data() -> tuple[dict, dict, dict, dict]:
     return alerts_out, lang_out, portfolios_out, watchlists_out
 
 def _do_save() -> None:
-    payload = _build_payload()
     if FIREBASE_URL and FIREBASE_SECRET:
         if not _firebase_load_ok:
             logger.error("save_alerts: BLOCAT — startup load a eșuat. Firebase NU va fi suprascris pentru a proteja datele existente.")
             return
         try:
-            r = requests.put(f"{FIREBASE_URL}/botdata.json",
-                             params=_firebase_params(),
-                             json=payload, timeout=15)
+            r = requests.patch(f"{FIREBASE_URL}/botdata.json",
+                               params=_firebase_params(),
+                               json=_build_firebase_patch_payload(), timeout=15)
             if r.status_code in (200, 201):
                 logger.info("save_alerts: Firebase OK")
                 return
@@ -290,7 +303,7 @@ def _do_save() -> None:
             logger.error(f"save_alerts Firebase error: {e}")
     try:
         with open(ALERTS_FILE, "w") as f:
-            json.dump(payload, f, indent=2)
+            json.dump(_build_payload(), f, indent=2)
         logger.warning("save_alerts: salvat LOCAL (Firebase indisponibil — datele se vor pierde la restart!)")
     except Exception as e:
         logger.error(f"save_alerts local error: {e}")
@@ -1110,9 +1123,11 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines = [f"{t(uid, 'portfolio_title')} — {ptype_label}  |  24h {fmt_pct(w24h)} ({w24h_usd_str})", "━" * 20, ""]
         for c in pf["coins"]:
             alloc   = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
-            pnl_str = ("+" if c["pnl"] >= 0 else "-") + fmt_price(abs(c["pnl"]))
+            pnl_str = ("+" if c["pnl"] >= 0 else "-") + f"${abs(c['pnl']):,.2f}"
+            buy_str = fmt_price(c["buy_price"]) if c["buy_price"] > 0 else "N/A"
+            inv_str = fmt_price(c["invested"])  if c["invested"]  > 0 else "N/A"
             lines.append(
-                f"• *{c['symbol']}* {fmt_price(c['current_price'])} | buy {fmt_price(c['buy_price'])} ({fmt_price(c['invested'])}) | P&L {fmt_pct(c['pnl_pct'])} ({pnl_str}) | `{alloc:.1f}%`"
+                f"• *{c['symbol']}* {fmt_price(c['current_price'])} | buy {buy_str} ({inv_str}) | P&L {fmt_pct(c['pnl_pct'])} ({pnl_str}) | `{alloc:.1f}%`"
             )
         pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
         add_lbl = "adaugă" if gl(uid) == "ro" else "add"
@@ -1329,9 +1344,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines = [f"{t(uid, 'portfolio_title')} — {ptype_label}  |  24h {fmt_pct(w24h)} ({w24h_usd_str})", "━" * 20, ""]
             for c in pf["coins"]:
                 alloc   = (c["current_value"] / pf["total_value"] * 100) if pf["total_value"] > 0 else 0
-                pnl_str = ("+" if c["pnl"] >= 0 else "-") + fmt_price(abs(c["pnl"]))
+                pnl_str = ("+" if c["pnl"] >= 0 else "-") + f"${abs(c['pnl']):,.2f}"
+                buy_str = fmt_price(c["buy_price"]) if c["buy_price"] > 0 else "N/A"
+                inv_str = fmt_price(c["invested"])  if c["invested"]  > 0 else "N/A"
                 lines.append(
-                    f"• *{c['symbol']}* {fmt_price(c['current_price'])} | buy {fmt_price(c['buy_price'])} ({fmt_price(c['invested'])}) | P&L {fmt_pct(c['pnl_pct'])} ({pnl_str}) | `{alloc:.1f}%`"
+                    f"• *{c['symbol']}* {fmt_price(c['current_price'])} | buy {buy_str} ({inv_str}) | P&L {fmt_pct(c['pnl_pct'])} ({pnl_str}) | `{alloc:.1f}%`"
                 )
             pnl_emoji = "🟢" if pf["total_pnl"] >= 0 else "🔴"
             add_lbl = "adaugă" if gl(uid) == "ro" else "add"
