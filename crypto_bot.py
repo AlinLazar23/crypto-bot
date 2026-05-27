@@ -1576,7 +1576,7 @@ async def auto_stiri_job(context: ContextTypes.DEFAULT_TYPE):
 # ─── MAIN ──────────────────────────────────────────────────────────────────────
 
 async def on_startup(app):
-    await post_info_message(app.bot)
+    pass  # await post_info_message(app.bot)
 
 def main():
     app = Application.builder().token(BOT_TOKEN).post_init(on_startup).build()
