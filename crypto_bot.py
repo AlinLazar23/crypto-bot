@@ -29,7 +29,6 @@ Roluri topicuri:
 
 Commands:
     /price BTC       - Preț live
-    /stats           - Statistici piață + Market Score
     /alert BTC 70000 - Alertă de preț
     /myalerts        - Alertele tale
     /removealert 1   - Șterge alertă
@@ -235,19 +234,6 @@ def _build_payload() -> dict:
         payload["__watchlists__"] = {str(k): v for k, v in user_watchlists.items()}
     return payload
 
-def _build_firebase_patch_payload() -> dict:
-    """Payload plat cu căi per-user pentru Firebase PATCH — nu suprascrie alți utilizatori."""
-    payload = {}
-    for uid, alerts in user_alerts.items():
-        payload[str(uid)] = alerts
-    for uid, lang in user_lang.items():
-        if uid != -1:
-            payload[f"__lang__/{uid}"] = lang
-    for uid, portfolio in user_portfolios.items():
-        payload[f"__portfolios__/{uid}"] = portfolio
-    for uid, watchlist in user_watchlists.items():
-        payload[f"__watchlists__/{uid}"] = watchlist
-    return payload
 
 def _migrate_portfolio(raw: dict) -> dict:
     if not raw or set(raw.keys()).issubset({"normal", "risk"}):
@@ -464,25 +450,6 @@ async def post_to_topic(bot, topic_id: int, text: str, keyboard=None):
     except Exception as e:
         logger.error(f"post_to_topic error (topic={topic_id}): {e}")
 
-MAX_MSG_LEN = 4000
-
-def _split_text(text: str) -> list[str]:
-    if len(text) <= MAX_MSG_LEN:
-        return [text]
-    # Taie doar la linii goale (între blocuri), nu în mijlocul unui bloc
-    blocks = text.split("\n\n")
-    parts, cur_blocks, cur_len = [], [], 0
-    for block in blocks:
-        block_len = len(block) + 2  # +2 pentru \n\n
-        if cur_len + block_len > MAX_MSG_LEN and cur_blocks:
-            parts.append("\n\n".join(cur_blocks))
-            cur_blocks, cur_len = [block], block_len
-        else:
-            cur_blocks.append(block)
-            cur_len += block_len
-    if cur_blocks:
-        parts.append("\n\n".join(cur_blocks))
-    return parts
 
 # ─── FORMATARE ─────────────────────────────────────────────────────────────────
 
@@ -570,6 +537,10 @@ def resolve_slug(query: str) -> str | None:
 # ─── DATE COINGECKO ────────────────────────────────────────────────────────────
 
 def get_coin_data(slug: str) -> dict | None:
+    cache_key = f"coin:{slug}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
     for attempt in range(3):
         if attempt > 0:
             time.sleep(2)
@@ -589,7 +560,7 @@ def get_coin_data(slug: str) -> dict | None:
                 if not data:
                     return None
                 c = data[0]
-                return {
+                result = {
                     "slug":       c["id"],
                     "symbol":     c["symbol"].upper(),
                     "name":       c["name"],
@@ -606,6 +577,8 @@ def get_coin_data(slug: str) -> dict | None:
                     "market_cap": c.get("market_cap") or 0,
                     "volume_24h": c.get("total_volume") or 0,
                 }
+                cache_set(cache_key, result)
+                return result
             logger.warning(f"get_coin_data HTTP {r.status_code} pentru {slug} (attempt {attempt + 1})")
         except Exception as e:
             logger.error(f"get_coin_data error ({slug}): {e}")
@@ -1102,7 +1075,7 @@ async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(args) < 3:
             await _dm_or_reply(update, context, t(uid, "portfolio_usage"), parse_mode="Markdown")
             return
-        symbol = args[1].upper() if len(args) == 2 else args[2].upper()
+        symbol = args[2].upper()
         if symbol not in user_portfolios[uid][ptype]:
             await _dm_or_reply(update, context, t(uid, "portfolio_not_found", symbol=symbol), parse_mode="Markdown")
             return
@@ -1307,6 +1280,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                       reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "stats":
+        uid = query.from_user.id
         fg = global_data = prices = None
         for attempt in range(3):
             if attempt > 0:
@@ -1319,9 +1293,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if fg and global_data and prices:
                 break
         if not fg or not global_data or not prices:
-            await query.edit_message_text("❌ Could not fetch data. Try again in 1 minute.")
+            await query.edit_message_text(t(uid, "stats_no_data"))
             return
-        text     = format_stats(fg, global_data, prices, uid=-1)
+        text     = format_stats(fg, global_data, prices, uid=uid)
         keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data="stats")]]
         await query.edit_message_text(text, parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(keyboard))
@@ -1459,13 +1433,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
     if not user_alerts:
         return
+    all_slugs = list({alert["slug"] for alerts in user_alerts.values() for alert in alerts if alert.get("slug")})
+    if not all_slugs:
+        return
+    prices_data = await asyncio.to_thread(get_prices_batch, all_slugs)
+    needs_save = False
     for uid, alerts in list(user_alerts.items()):
         to_remove = []
         for i, alert in enumerate(alerts):
-            data = await asyncio.to_thread(get_coin_data, alert["slug"])
-            if not data:
+            pd      = prices_data.get(alert["slug"], {})
+            current = pd.get("usd", 0)
+            if not current:
                 continue
-            current   = data["price"]
             target    = alert["target"]
             direction = alert.get("direction", "above")
             hit = (current >= target) if direction == "above" else (current <= target)
@@ -1476,15 +1455,16 @@ async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
                      name=alert["name"], symbol=alert["symbol"],
                      verb=verb, price=fmt_price(current), target=fmt_price(target))
             try:
-                await context.bot.send_message(
-                    chat_id=uid, text=text, parse_mode="Markdown")
+                await context.bot.send_message(chat_id=uid, text=text, parse_mode="Markdown")
             except Exception as e:
                 logger.error(f"Alert send failed for uid={uid}: {e}")
             to_remove.append(i)
         for i in reversed(to_remove):
             alerts.pop(i)
         if to_remove:
-            await save_alerts()
+            needs_save = True
+    if needs_save:
+        await save_alerts()
 
 async def auto_stats_job(context: ContextTypes.DEFAULT_TYPE):
     """Trimite stats automat în TOPIC_DATE la 00:00 și 12:00."""
@@ -1586,11 +1566,8 @@ async def auto_stiri_job(context: ContextTypes.DEFAULT_TYPE):
 
 # ─── MAIN ──────────────────────────────────────────────────────────────────────
 
-async def on_startup(app):
-    pass  # await post_info_message(app.bot)
-
 def main():
-    app = Application.builder().token(BOT_TOKEN).post_init(on_startup).build()
+    app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("chatid",      cmd_chatid))
     app.add_handler(CommandHandler("help",        cmd_help))
