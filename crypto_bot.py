@@ -13,7 +13,7 @@ Setup:
        BOT_TOKEN, GROUP_CHAT_ID,
        TOPIC_COMENZI, TOPIC_PIATA, TOPIC_STIRI,
        TOPIC_DATE, TOPIC_PREDICTII
-    3. (Opțional) CRYPTOPANIC_TOKEN pentru știri automate
+    3. Știrile automate vin din feed-uri RSS (CoinDesk, Cointelegraph, Decrypt) — fără setări
 
 Cum obții Thread ID-urile topicurilor:
     1. Adaugă botul în grup ca Admin
@@ -23,7 +23,7 @@ Cum obții Thread ID-urile topicurilor:
 Roluri topicuri:
     Comenzi bot   ← singura zonă unde funcționează comenzile user
     Piață         ← trending automat la 12h
-    Știri         ← feed știri crypto (dacă CRYPTOPANIC_TOKEN setat)
+    Știri         ← feed știri crypto (RSS, automat la 6h)
     Date & Analize← stats automat la 00:00 și 12:00
     Predicții     ← alerte de preț automate
 
@@ -54,7 +54,13 @@ from telegram.ext import (
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
 BOT_TOKEN         = os.environ.get("BOT_TOKEN", "")
 COINGECKO_BASE    = "https://api.coingecko.com/api/v3"
-CRYPTOPANIC_TOKEN = os.environ.get("CRYPTOPANIC_TOKEN", "")
+
+# Surse RSS pentru topicul Știri (fără API key, funcționează în orice regiune)
+NEWS_FEEDS = [
+    ("CoinDesk",      "https://www.coindesk.com/arc/outboundfeeds/rss/"),
+    ("Cointelegraph", "https://cointelegraph.com/rss"),
+    ("Decrypt",       "https://decrypt.co/feed"),
+]
 
 GROUP_CHAT_ID   = int(os.environ.get("GROUP_CHAT_ID",    "0"))
 TOPIC_COMENZI   = int(os.environ.get("TOPIC_COMENZI",   "0"))
@@ -95,6 +101,21 @@ TEXTS: dict[str, dict] = {
         "stats_volume":       "Volum 24h",
         "stats_insight":      "🔬 *INSIGHT AUTOMAT*",
         "stats_score_label":  "Bazat pe: sentiment + trend + volum + dominance",
+        "score_bearish":        "Bearish 🔴",
+        "score_weak_bearish":   "Slab Bearish 🟠",
+        "score_neutral":        "Neutru 🟡",
+        "score_bullish":        "Bullish 🟢",
+        "score_strong_bullish": "Strong Bullish 🟢🟢",
+        "insight_fear_btc_resist":  "📊 Deși piața e în frică, BTC rezistă → posibilă acumulare instituțională",
+        "insight_greed_btc_drop":   "⚠️ Greed ridicat dar BTC scade → semnal de slăbiciune, fii atent",
+        "insight_sentiment_up":     "📈 Sentimentul s-a îmbunătățit față de săptămâna trecută → momentum pozitiv",
+        "insight_sentiment_down":   "📉 Sentimentul s-a deteriorat față de media săptămânii → prudență",
+        "insight_mktcap_up":        "💹 Market cap-ul total crește cu volum → trend bullish confirmat",
+        "insight_mktcap_down":      "📉 Scădere generalizată în piață → risc crescut pe termen scurt",
+        "insight_btc_dom_high":     "🔶 BTC dominance ridicat → altcoin-urile suferă, capital concentrat în BTC",
+        "insight_btc_dom_low":      "🟣 BTC dominance scăzut → posibilă altseason în desfășurare",
+        "insight_extreme_panic":    "🚨 Panică extremă istorică → zonele acestea au coincis cu fundul pieței în trecut",
+        "insight_balanced":         "➡️ Piața este echilibrată momentan — niciun semnal extrem detectat",
         "alert_usage":        "Folosire: `/alert BTC 70000`",
         "alert_invalid":      "❌ Preț invalid.",
         "alert_loading":      "⏳ Se caută *{coin}*...",
@@ -158,6 +179,21 @@ TEXTS: dict[str, dict] = {
         "stats_volume":       "24h Volume",
         "stats_insight":      "🔬 *AUTO INSIGHT*",
         "stats_score_label":  "Based on: sentiment + trend + volume + dominance",
+        "score_bearish":        "Bearish 🔴",
+        "score_weak_bearish":   "Weak Bearish 🟠",
+        "score_neutral":        "Neutral 🟡",
+        "score_bullish":        "Bullish 🟢",
+        "score_strong_bullish": "Strong Bullish 🟢🟢",
+        "insight_fear_btc_resist":  "📊 Despite market fear, BTC holds → possible institutional accumulation",
+        "insight_greed_btc_drop":   "⚠️ High greed but BTC dropping → weakness signal, stay alert",
+        "insight_sentiment_up":     "📈 Sentiment improved vs. last week → positive momentum",
+        "insight_sentiment_down":   "📉 Sentiment deteriorated vs. weekly average → caution",
+        "insight_mktcap_up":        "💹 Total market cap rising with volume → bullish trend confirmed",
+        "insight_mktcap_down":      "📉 Broad market decline → increased short-term risk",
+        "insight_btc_dom_high":     "🔶 High BTC dominance → altcoins suffering, capital concentrated in BTC",
+        "insight_btc_dom_low":      "🟣 Low BTC dominance → possible altseason underway",
+        "insight_extreme_panic":    "🚨 Historic extreme panic → these zones have coincided with market bottoms in the past",
+        "insight_balanced":         "➡️ Market is balanced right now — no extreme signals detected",
         "alert_usage":        "Usage: `/alert BTC 70000`",
         "alert_invalid":      "❌ Invalid price.",
         "alert_loading":      "⏳ Searching *{coin}*...",
@@ -602,20 +638,48 @@ def get_trending_coins() -> list[dict]:
         logger.error(f"get_trending_coins error: {e}")
     return []
 
-def get_crypto_news(limit: int = 5) -> list[dict]:
-    if not CRYPTOPANIC_TOKEN:
-        return []
+def _parse_pubdate(text: str):
+    """Parsează data RFC-822 dintr-un feed RSS. Returnează datetime aware sau None."""
+    if not text:
+        return None
     try:
-        r = requests.get(
-            "https://cryptopanic.com/api/v1/posts/",
-            params={"auth_token": CRYPTOPANIC_TOKEN, "public": "true", "kind": "news"},
-            timeout=10,
-        )
-        posts = r.json().get("results", [])
-        return [{"title": p["title"], "url": p["url"]} for p in posts[:limit]]
-    except Exception as e:
-        logger.error(f"get_crypto_news error: {e}")
-    return []
+        from email.utils import parsedate_to_datetime
+        return parsedate_to_datetime(text)
+    except Exception:
+        return None
+
+def get_crypto_news(limit: int = 5) -> list[dict]:
+    """Agregă știri din mai multe feed-uri RSS, sortate descrescător după dată."""
+    import xml.etree.ElementTree as ET
+    from datetime import datetime, timezone
+
+    cached = cache_get("news_rss")
+    if cached is not None:
+        return cached[:limit]
+
+    items = []
+    for source, url in NEWS_FEEDS:
+        try:
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            if r.status_code != 200:
+                logger.warning(f"get_crypto_news {source} HTTP {r.status_code}")
+                continue
+            root = ET.fromstring(r.content)
+            for it in root.findall(".//item")[:10]:
+                title = (it.findtext("title") or "").strip()
+                link  = (it.findtext("link") or "").strip()
+                pub   = _parse_pubdate(it.findtext("pubDate") or "")
+                if title and link:
+                    items.append({"title": title, "url": link, "source": source, "dt": pub})
+        except Exception as e:
+            logger.error(f"get_crypto_news {source} error: {e}")
+
+    fallback_dt = datetime.min.replace(tzinfo=timezone.utc)
+    items.sort(key=lambda x: x["dt"] or fallback_dt, reverse=True)
+    result = [{"title": i["title"], "url": i["url"], "source": i["source"]} for i in items]
+    if result:
+        cache_set("news_rss", result)
+    return result[:limit]
 
 
 # ─── STATS DATA SOURCES ────────────────────────────────────────────────────────
@@ -715,7 +779,7 @@ def interpret_fng(value: int, uid: int = 0) -> str:
     if value <= 80:  return t(uid, "fng_greed")
     return t(uid, "fng_extreme_greed")
 
-def calc_market_score(fg: dict, global_data: dict, prices: dict) -> tuple[int, str]:
+def calc_market_score(fg: dict, global_data: dict, prices: dict, uid: int = 0) -> tuple[int, str]:
     score = 5.0
 
     fng_val = fg.get("value", 50)
@@ -745,15 +809,15 @@ def calc_market_score(fg: dict, global_data: dict, prices: dict) -> tuple[int, s
 
     score = max(1, min(10, round(score)))
 
-    if score <= 3:   label = "Bearish 🔴"
-    elif score <= 4: label = "Slab Bearish 🟠"
-    elif score <= 6: label = "Neutru 🟡"
-    elif score <= 8: label = "Bullish 🟢"
-    else:            label = "Strong Bullish 🟢🟢"
+    if score <= 3:   label = t(uid, "score_bearish")
+    elif score <= 4: label = t(uid, "score_weak_bearish")
+    elif score <= 6: label = t(uid, "score_neutral")
+    elif score <= 8: label = t(uid, "score_bullish")
+    else:            label = t(uid, "score_strong_bullish")
 
     return score, label
 
-def generate_insight(fg: dict, global_data: dict, prices: dict) -> str:
+def generate_insight(fg: dict, global_data: dict, prices: dict, uid: int = 0) -> str:
     fng_val  = fg.get("value", 50)
     btc_chg  = prices.get("btc_change", 0)
     cap_chg  = global_data.get("market_cap_change_24h", 0)
@@ -762,30 +826,30 @@ def generate_insight(fg: dict, global_data: dict, prices: dict) -> str:
 
     insights = []
     if fng_val <= 35 and btc_chg >= 0:
-        insights.append("📊 Deși piața e în frică, BTC rezistă → posibilă acumulare instituțională")
+        insights.append(t(uid, "insight_fear_btc_resist"))
     elif fng_val >= 70 and btc_chg < -1:
-        insights.append("⚠️ Greed ridicat dar BTC scade → semnal de slăbiciune, fii atent")
+        insights.append(t(uid, "insight_greed_btc_drop"))
 
     if fng_val > week_avg + 10:
-        insights.append("📈 Sentimentul s-a îmbunătățit față de săptămâna trecută → momentum pozitiv")
+        insights.append(t(uid, "insight_sentiment_up"))
     elif fng_val < week_avg - 10:
-        insights.append("📉 Sentimentul s-a deteriorat față de media săptămânii → prudență")
+        insights.append(t(uid, "insight_sentiment_down"))
 
     if cap_chg > 2:
-        insights.append("💹 Market cap-ul total crește cu volum → trend bullish confirmat")
+        insights.append(t(uid, "insight_mktcap_up"))
     elif cap_chg < -2:
-        insights.append("📉 Scădere generalizată în piață → risc crescut pe termen scurt")
+        insights.append(t(uid, "insight_mktcap_down"))
 
     if btc_dom > 58:
-        insights.append("🔶 BTC dominance ridicat → altcoin-urile suferă, capital concentrat în BTC")
+        insights.append(t(uid, "insight_btc_dom_high"))
     elif btc_dom < 42:
-        insights.append("🟣 BTC dominance scăzut → posibilă altseason în desfășurare")
+        insights.append(t(uid, "insight_btc_dom_low"))
 
     if fng_val <= 15:
-        insights.append("🚨 Panică extremă istorică → zonele acestea au coincis cu fundul pieței în trecut")
+        insights.append(t(uid, "insight_extreme_panic"))
 
     if not insights:
-        insights.append("➡️ Piața este echilibrată momentan — niciun semnal extrem detectat")
+        insights.append(t(uid, "insight_balanced"))
 
     return "\n".join(f"  {i}" for i in insights[:3])
 
@@ -817,9 +881,9 @@ def format_stats(fg: dict, global_data: dict, prices: dict, uid: int = 0) -> str
                    f"↓ {fng_trend}"  if fng_trend < 0 else "→ 0")
     bar = fng_bar(fng_val)
 
-    score, score_label = calc_market_score(fg, global_data, prices)
+    score, score_label = calc_market_score(fg, global_data, prices, uid)
     score_bar = "⭐" * score + "☆" * (10 - score)
-    insight   = generate_insight(fg, global_data, prices)
+    insight   = generate_insight(fg, global_data, prices, uid)
 
     cap_chg   = global_data.get("market_cap_change_24h", 0)
     cap_arrow = "🟢 ▲" if cap_chg >= 0 else "🔴 ▼"
@@ -913,7 +977,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_in_correct_topic(update):
         await update.message.reply_text(topic_redirect(uid), parse_mode="Markdown")
         return
-    await update.message.reply_text(t(uid, "help_msg"), parse_mode="Markdown")
+    await _delete_cmd(update)
+    await _dm_or_reply(update, context, t(uid, "help_msg"), parse_mode="Markdown")
 
 async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid      = update.effective_user.id
@@ -1551,17 +1616,17 @@ async def post_info_message(bot):
         logger.error(f"post_info_message error: {e}")
 
 async def auto_stiri_job(context: ContextTypes.DEFAULT_TYPE):
-    """Trimite știri automat în TOPIC_STIRI la 6h (dacă CRYPTOPANIC_TOKEN setat)."""
+    """Trimite știri automat în TOPIC_STIRI la 6h (agregate din feed-uri RSS)."""
     if not TOPIC_STIRI:
         return
     news = await asyncio.to_thread(get_crypto_news, 5)
     if not news:
-        logger.info("auto_stiri_job: CRYPTOPANIC_TOKEN neconfigurat sau nicio știre")
+        logger.info("auto_stiri_job: nicio știre disponibilă din feed-urile RSS")
         return
     now   = datetime.datetime.now(TZ_RO).strftime("%d.%m.%Y %H:%M")
     lines = [t(-1, "stiri_title", now=now)]
     for n in news:
-        lines.append(f"• [{n['title']}]({n['url']})")
+        lines.append(f"• [{n['title']}]({n['url']}) — _{n['source']}_")
     await post_to_topic(context.bot, TOPIC_STIRI, "\n".join(lines))
 
 # ─── MAIN ──────────────────────────────────────────────────────────────────────
@@ -1596,7 +1661,7 @@ def main():
     print(f"  TOPIC_DATE     : {TOPIC_DATE       or 'neconfigurat'}")
     print(f"  TOPIC_PREDICTII: {TOPIC_PREDICTII  or 'neconfigurat'}")
     print(f"  TOPIC_INFO     : {TOPIC_INFO       or 'neconfigurat'}")
-    print(f"  CRYPTOPANIC    : {'configurat' if CRYPTOPANIC_TOKEN else 'neconfigurat (stiri dezactivate)'}")
+    print(f"  STIRI (RSS)    : {', '.join(s for s, _ in NEWS_FEEDS)}")
     print(f"  FIREBASE       : {'activ (' + FIREBASE_URL + ')' if FIREBASE_URL else 'neconfigurat (alerte nu persista)'}")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
