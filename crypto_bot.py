@@ -546,7 +546,7 @@ COIN_SLUG_MAP = {
     "arbitrum": "arbitrum", "optimism": "optimism",
     "injective": "injective-protocol", "filecoin": "filecoin",
     "vechain": "vechain", "celestia": "celestia",
-    "hyperliquid": "hyperliquid", "kaspa": "kaspa",
+    "hyperliquid": "hyperliquid","ONDO": "ondo-finance", "kaspa": "kaspa",
 }
 
 def resolve_slug(query: str) -> str | None:
