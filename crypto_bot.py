@@ -1,4 +1,5 @@
 """
+
 Crypto Market Updates Telegram Bot
 ====================================
 Surse: CoinGecko (toate datele) + TradingView (analiză)
